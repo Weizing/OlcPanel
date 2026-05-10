@@ -199,33 +199,7 @@ def read_traffic_stats(uid):
     """Read traffic statistics from SOCKS5 proxy stats file"""
     print(f"Starting traffic monitoring for instance {uid}", flush=True)
 
-    stats_file_path = None
-
-    # Find the stats file location
-    try:
-        container = docker_client.containers.get(containers[uid])
-
-        # Try multiple possible locations
-        possible_paths = [
-            '/tmp/socks.stats',
-            '/tmp/outsocks.stats',
-            '/data/outsocks.stats'
-        ]
-
-        for path in possible_paths:
-            result = container.exec_run(f'test -f {path}', demux=False)
-            if result.exit_code == 0:
-                stats_file_path = path
-                print(f"Found stats file at {path} for instance {uid}", flush=True)
-                break
-
-        if not stats_file_path:
-            print(f"Could not find stats file for instance {uid}", flush=True)
-            return
-
-    except Exception as e:
-        print(f"Error finding stats file: {e}", flush=True)
-        return
+    stats_file_path = '/tmp/socks.stats'
 
     while uid in containers:
         try:
@@ -233,6 +207,13 @@ def read_traffic_stats(uid):
             if container.status != 'running':
                 print(f"Container {uid} not running, stopping traffic monitoring", flush=True)
                 break
+
+            # Check if stats file exists
+            test_result = container.exec_run(f'test -f {stats_file_path}', demux=False)
+            if test_result.exit_code != 0:
+                # File doesn't exist yet, wait for next iteration
+                time.sleep(5)
+                continue
 
             exec_result = container.exec_run(f'cat {stats_file_path}', demux=False)
 
