@@ -16,7 +16,7 @@ RUN go build -o socks5proxy .
 
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates net-tools
 
 WORKDIR /app
 
