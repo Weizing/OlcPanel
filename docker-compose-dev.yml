@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: olcpanel-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend/data:/app/data
+    restart: unless-stopped
+    networks:
+      - olcpanel-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: olcpanel-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - olcpanel-network
+
+networks:
+  olcpanel-network:
+    driver: bridge
