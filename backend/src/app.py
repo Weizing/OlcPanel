@@ -28,6 +28,7 @@ docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock')
 users = {}
 containers = {}
 logs = {}
+traffic_stats = {}
 lock = threading.RLock()
 
 CARRIERS = ['wbstream', 'jazz', 'telemost']
@@ -69,6 +70,10 @@ def load_users():
                             containers[uid] = container.id
                             thread = threading.Thread(target=read_container_logs, args=(uid, container), daemon=True)
                             thread.start()
+                            # Start traffic monitoring for srv mode
+                            if user.get('mode') == 'srv':
+                                traffic_thread = threading.Thread(target=read_traffic_stats, args=(uid,), daemon=True)
+                                traffic_thread.start()
                             container_exists = True
                         else:
                             # Container exists but stopped, remove it
@@ -164,6 +169,10 @@ def build_olcrtc_command(user):
     if user.get('mode') == 'cnc':
         cmd.extend(['-socks-host', '0.0.0.0'])
         cmd.extend(['-socks-port', str(user.get('socks_port', 1080))])
+    elif user.get('mode') == 'srv':
+        # For srv mode, use local SOCKS5 proxy for traffic control
+        cmd.extend(['-socks-proxy', '127.0.0.1'])
+        cmd.extend(['-socks-proxy-port', '1081'])
 
     transport_params = user.get('transport_params', {})
     for key, value in transport_params.items():
@@ -185,6 +194,75 @@ def read_container_logs(uid, container):
                 logs[uid].append(log_line)
     except:
         pass
+
+def read_traffic_stats(uid):
+    """Read traffic statistics from SOCKS5 proxy stats file"""
+    print(f"Starting traffic monitoring for instance {uid}", flush=True)
+
+    stats_file_path = '/tmp/socks.stats'
+
+    while uid in containers:
+        try:
+            container = docker_client.containers.get(containers[uid])
+            if container.status != 'running':
+                print(f"Container {uid} not running, stopping traffic monitoring", flush=True)
+                break
+
+            # Check if stats file exists
+            test_result = container.exec_run(f'test -f {stats_file_path}', demux=False)
+            if test_result.exit_code != 0:
+                # File doesn't exist yet, wait for next iteration
+                time.sleep(5)
+                continue
+
+            exec_result = container.exec_run(f'cat {stats_file_path}', demux=False)
+
+            if exec_result.exit_code == 0:
+                stats_data = exec_result.output.decode('utf-8', errors='ignore').strip()
+                print(f"Raw stats data for {uid}: {stats_data}", flush=True)
+
+                if stats_data:
+                    try:
+                        # Parse stats format: "rx_bytes tx_bytes"
+                        parts = stats_data.split()
+                        if len(parts) >= 2:
+                            rx_bytes = int(parts[0])
+                            tx_bytes = int(parts[1])
+                            current_time = time.time()
+
+                            with lock:
+                                # Calculate speed if we have previous data
+                                rx_speed = 0
+                                tx_speed = 0
+                                if uid in traffic_stats:
+                                    prev_stats = traffic_stats[uid]
+                                    time_diff = current_time - prev_stats['last_update']
+                                    if time_diff > 0:
+                                        rx_speed = (rx_bytes - prev_stats['rx_bytes']) / time_diff / 1024  # KB/s
+                                        tx_speed = (tx_bytes - prev_stats['tx_bytes']) / time_diff / 1024  # KB/s
+
+                                traffic_stats[uid] = {
+                                    'rx_bytes': rx_bytes,
+                                    'tx_bytes': tx_bytes,
+                                    'rx_mb': round(rx_bytes / 1024 / 1024, 2),
+                                    'tx_mb': round(tx_bytes / 1024 / 1024, 2),
+                                    'total_mb': round((rx_bytes + tx_bytes) / 1024 / 1024, 2),
+                                    'rx_speed': round(rx_speed, 2),
+                                    'tx_speed': round(tx_speed, 2),
+                                    'last_update': current_time
+                                }
+                                print(f"Updated traffic stats for {uid}: RX={traffic_stats[uid]['rx_mb']}MB TX={traffic_stats[uid]['tx_mb']}MB Speed: RX={traffic_stats[uid]['rx_speed']}KB/s TX={traffic_stats[uid]['tx_speed']}KB/s", flush=True)
+                    except (ValueError, IndexError) as e:
+                        print(f"Error parsing traffic stats for {uid}: {e}", flush=True)
+        except Exception as e:
+            print(f"Error reading traffic stats for {uid}: {e}", flush=True)
+
+        time.sleep(5)
+
+    print(f"Stopping traffic monitoring for instance {uid}", flush=True)
+    with lock:
+        if uid in traffic_stats:
+            del traffic_stats[uid]
 
 def start_olcrtc_container(uid):
     with lock:
@@ -209,6 +287,18 @@ def start_olcrtc_container(uid):
             socks_port = user.get('socks_port', 1080)
             port_bindings[1080] = socks_port
 
+        # Environment variables for SOCKS5 proxy (srv mode only)
+        environment = {}
+        if user.get('mode') == 'srv':
+            # Use port 88XX where XX is the instance ID
+            socks_port = 8800 + int(uid)
+            environment['SOCKS_PORT'] = '1081'
+            environment['RX_LIMIT'] = str(user.get('rx_limit', 0))
+            environment['TX_LIMIT'] = str(user.get('tx_limit', 0))
+            # Expose SOCKS5 proxy port
+            port_bindings[1081] = socks_port
+            users[uid]['socks_port'] = socks_port
+
         try:
             container = docker_client.containers.run(
                 'olcrtc:latest',
@@ -216,6 +306,7 @@ def start_olcrtc_container(uid):
                 detach=True,
                 name=f'olcrtc-{uid}',
                 ports=port_bindings,
+                environment=environment,
                 remove=False,
                 network_mode='bridge'
             )
@@ -227,6 +318,11 @@ def start_olcrtc_container(uid):
 
             thread = threading.Thread(target=read_container_logs, args=(uid, container), daemon=True)
             thread.start()
+
+            # Start traffic monitoring for srv mode
+            if user.get('mode') == 'srv':
+                traffic_thread = threading.Thread(target=read_traffic_stats, args=(uid,), daemon=True)
+                traffic_thread.start()
 
             return True
         except Exception as e:
@@ -502,6 +598,14 @@ def generate_uri(uid):
         uri += f"${user['profile_name']}"
 
     return jsonify({'uri': uri})
+
+@app.route('/api/users/traffic/<uid>', methods=['GET'])
+@require_auth
+def get_traffic(uid):
+    with lock:
+        if uid in traffic_stats:
+            return jsonify(traffic_stats[uid])
+        return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
 
 if __name__ == '__main__':
     load_users()
