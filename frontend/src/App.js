@@ -86,11 +86,9 @@ function App() {
       fetchCarriers();
       fetchTransports();
       fetchStatus();
-      fetchTrafficStats();
       const interval = setInterval(() => {
         if (autoRefresh) {
           fetchStatus();
-          fetchTrafficStats();
           if (selectedUser) {
             fetchLogs(selectedUser);
           }
@@ -99,6 +97,19 @@ function App() {
       return () => clearInterval(interval);
     }
   }, [autoRefresh, selectedUser, isAuthenticated]);
+
+  // Separate effect for traffic stats that depends on users
+  useEffect(() => {
+    if (isAuthenticated && users.length > 0) {
+      fetchTrafficStats();
+      const interval = setInterval(() => {
+        if (autoRefresh) {
+          fetchTrafficStats();
+        }
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, autoRefresh, users.length]);
 
   useEffect(() => {
     if (newUser.transport && isAuthenticated) {
