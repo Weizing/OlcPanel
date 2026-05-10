@@ -246,15 +246,28 @@ def read_traffic_stats(uid):
                         if len(parts) >= 2:
                             rx_bytes = int(parts[0])
                             tx_bytes = int(parts[1])
+                            current_time = time.time()
 
                             with lock:
+                                # Calculate speed if we have previous data
+                                rx_speed = 0
+                                tx_speed = 0
+                                if uid in traffic_stats:
+                                    prev_stats = traffic_stats[uid]
+                                    time_diff = current_time - prev_stats['last_update']
+                                    if time_diff > 0:
+                                        rx_speed = (rx_bytes - prev_stats['rx_bytes']) / time_diff / 1024  # KB/s
+                                        tx_speed = (tx_bytes - prev_stats['tx_bytes']) / time_diff / 1024  # KB/s
+
                                 traffic_stats[uid] = {
                                     'rx_bytes': rx_bytes,
                                     'tx_bytes': tx_bytes,
                                     'rx_mb': round(rx_bytes / 1024 / 1024, 2),
                                     'tx_mb': round(tx_bytes / 1024 / 1024, 2),
                                     'total_mb': round((rx_bytes + tx_bytes) / 1024 / 1024, 2),
-                                    'last_update': time.time()
+                                    'rx_speed': round(rx_speed, 2),
+                                    'tx_speed': round(tx_speed, 2),
+                                    'last_update': current_time
                                 }
                     except (ValueError, IndexError) as e:
                         print(f"Error parsing traffic stats for {uid}: {e}", flush=True)
@@ -294,9 +307,14 @@ def start_olcrtc_container(uid):
         # Environment variables for SOCKS5 proxy (srv mode only)
         environment = {}
         if user.get('mode') == 'srv':
+            # Use port 88XX where XX is the instance ID
+            socks_port = 8800 + int(uid)
             environment['SOCKS_PORT'] = '1081'
             environment['RX_LIMIT'] = str(user.get('rx_limit', 0))
             environment['TX_LIMIT'] = str(user.get('tx_limit', 0))
+            # Expose SOCKS5 proxy port
+            port_bindings[1081] = socks_port
+            users[uid]['socks_port'] = socks_port
 
         try:
             container = docker_client.containers.run(
@@ -604,7 +622,7 @@ def get_traffic(uid):
     with lock:
         if uid in traffic_stats:
             return jsonify(traffic_stats[uid])
-        return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0})
+        return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
 
 if __name__ == '__main__':
     load_users()

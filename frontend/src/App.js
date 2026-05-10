@@ -543,10 +543,18 @@ function App() {
                           {user.mode === 'cnc' && (
                             <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
                           )}
+                          {user.mode === 'srv' && user.socks_port && (
+                            <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                          )}
                           {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
-                            <div className="text-xs text-primary">
-                              <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
-                            </div>
+                            <>
+                              <div className="text-xs text-primary">
+                                <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+                              </div>
+                              <div className="text-xs text-green-500">
+                                <span className="text-muted-foreground">Speed:</span> ↓{trafficStats[user.id].rx_speed} KB/s / ↑{trafficStats[user.id].tx_speed} KB/s
+                              </div>
+                            </>
                           )}
                         </div>
                         <div className="flex gap-1">
