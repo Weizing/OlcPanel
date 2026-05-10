@@ -41,6 +41,7 @@ function App() {
   const [editingUser, setEditingUser] = useState(null);
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [qrCodeData, setQrCodeData] = useState(null);
+  const [trafficStats, setTrafficStats] = useState({});
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -66,7 +67,9 @@ function App() {
     transport_params: {},
     debug: false,
     profile_name: '',
-    dns: '1.1.1.1:53'
+    dns: '1.1.1.1:53',
+    rx_limit: 0,
+    tx_limit: 0
   });
 
   // Copy all useEffect hooks and functions from original
@@ -83,9 +86,11 @@ function App() {
       fetchCarriers();
       fetchTransports();
       fetchStatus();
+      fetchTrafficStats();
       const interval = setInterval(() => {
         if (autoRefresh) {
           fetchStatus();
+          fetchTrafficStats();
           if (selectedUser) {
             fetchLogs(selectedUser);
           }
@@ -170,6 +175,21 @@ function App() {
       setLogs(response.data.logs);
     } catch (err) {
       console.error('Failed to fetch logs:', err);
+    }
+  };
+
+  const fetchTrafficStats = async () => {
+    try {
+      const stats = {};
+      for (const user of users) {
+        if (user.state === 'running' && user.mode === 'srv') {
+          const response = await axios.get(`/api/users/traffic/${user.id}`);
+          stats[user.id] = response.data;
+        }
+      }
+      setTrafficStats(stats);
+    } catch (err) {
+      console.error('Failed to fetch traffic stats:', err);
     }
   };
 
@@ -523,6 +543,11 @@ function App() {
                           {user.mode === 'cnc' && (
                             <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
                           )}
+                          {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
+                            <div className="text-xs text-primary">
+                              <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-1">
                           {user.state === 'running' ? (
@@ -778,6 +803,34 @@ function App() {
               )}
             </div>
 
+            {newUser.mode === 'srv' && (
+              <div className="space-y-2 p-4 border rounded-lg">
+                <h3 className="font-semibold">Ограничение скорости (KB/s)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="rx_limit">RX Limit (Download)</Label>
+                    <Input
+                      id="rx_limit"
+                      type="number"
+                      placeholder="0 = без ограничений"
+                      value={newUser.rx_limit || 0}
+                      onChange={(e) => setNewUser({ ...newUser, rx_limit: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tx_limit">TX Limit (Upload)</Label>
+                    <Input
+                      id="tx_limit"
+                      type="number"
+                      placeholder="0 = без ограничений"
+                      value={newUser.tx_limit || 0}
+                      onChange={(e) => setNewUser({ ...newUser, tx_limit: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -946,6 +999,34 @@ function App() {
                     onChange={(e) => setEditingUser({ ...editingUser, dns: e.target.value })}
                   />
                 </div>
+
+                {editingUser.mode === 'srv' && (
+                  <div className="space-y-2 p-4 border rounded-lg">
+                    <h3 className="font-semibold">Ограничение скорости (KB/s)</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit_rx_limit">RX Limit (Download)</Label>
+                        <Input
+                          id="edit_rx_limit"
+                          type="number"
+                          placeholder="0 = без ограничений"
+                          value={editingUser.rx_limit || 0}
+                          onChange={(e) => setEditingUser({ ...editingUser, rx_limit: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit_tx_limit">TX Limit (Upload)</Label>
+                        <Input
+                          id="edit_tx_limit"
+                          type="number"
+                          placeholder="0 = без ограничений"
+                          value={editingUser.tx_limit || 0}
+                          onChange={(e) => setEditingUser({ ...editingUser, tx_limit: parseInt(e.target.value) || 0 })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center space-x-2">
                   <input
