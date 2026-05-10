@@ -238,6 +238,7 @@ def read_traffic_stats(uid):
 
             if exec_result.exit_code == 0:
                 stats_data = exec_result.output.decode('utf-8', errors='ignore').strip()
+                print(f"Raw stats data for {uid}: {stats_data}", flush=True)
 
                 if stats_data:
                     try:
@@ -269,6 +270,7 @@ def read_traffic_stats(uid):
                                     'tx_speed': round(tx_speed, 2),
                                     'last_update': current_time
                                 }
+                                print(f"Updated traffic stats for {uid}: RX={traffic_stats[uid]['rx_mb']}MB TX={traffic_stats[uid]['tx_mb']}MB Speed: RX={traffic_stats[uid]['rx_speed']}KB/s TX={traffic_stats[uid]['tx_speed']}KB/s", flush=True)
                     except (ValueError, IndexError) as e:
                         print(f"Error parsing traffic stats for {uid}: {e}", flush=True)
         except Exception as e:
