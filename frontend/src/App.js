@@ -45,6 +45,15 @@ function App() {
   const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
   const [subscriptionUrls, setSubscriptionUrls] = useState([]);
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [activeTab, setActiveTab] = useState('instances'); // 'instances' or 'nodes'
+  const [nodes, setNodes] = useState([]);
+  const [showAddNodeDialog, setShowAddNodeDialog] = useState(false);
+  const [newNode, setNewNode] = useState({
+    name: '',
+    host: '',
+    port: 3002,
+    token: ''
+  });
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -89,6 +98,7 @@ function App() {
       fetchCarriers();
       fetchTransports();
       fetchStatus();
+      fetchNodes();
       const interval = setInterval(() => {
         if (autoRefresh) {
           fetchStatus();
@@ -214,6 +224,51 @@ function App() {
       setTrafficStats(stats);
     } catch (err) {
       console.error('Failed to fetch traffic stats:', err);
+    }
+  };
+
+  const fetchNodes = async () => {
+    try {
+      const response = await axios.get('/api/nodes');
+      setNodes(response.data.nodes);
+    } catch (err) {
+      console.error('Failed to fetch nodes:', err);
+    }
+  };
+
+  const addNode = async () => {
+    if (!newNode.name || !newNode.host || !newNode.token) {
+      showNotification('Заполни все поля!', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/nodes', newNode);
+      setShowAddNodeDialog(false);
+      setNewNode({ name: '', host: '', port: 3002, token: '' });
+      fetchNodes();
+      showNotification('Нода добавлена');
+    } catch (err) {
+      showNotification('Ошибка добавления ноды', 'error');
+    }
+  };
+
+  const deleteNode = async (nodeId) => {
+    if (!confirm('Удалить ноду?')) return;
+    try {
+      await axios.delete(`/api/nodes/${nodeId}`);
+      fetchNodes();
+      showNotification('Нода удалена');
+    } catch (err) {
+      showNotification('Ошибка удаления ноды', 'error');
+    }
+  };
+
+  const checkNodeHealth = async (nodeId) => {
+    try {
+      const response = await axios.get(`/api/nodes/${nodeId}/health`);
+      return response.data.status === 'ok' ? 'online' : 'offline';
+    } catch (err) {
+      return 'offline';
     }
   };
 
@@ -521,6 +576,25 @@ function App() {
 
       {/* Main content */}
       <div className="container mx-auto px-4 py-6">
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6">
+          <Button
+            onClick={() => setActiveTab('instances')}
+            variant={activeTab === 'instances' ? 'default' : 'outline'}
+            className="flex-1"
+          >
+            Инстансы
+          </Button>
+          <Button
+            onClick={() => setActiveTab('nodes')}
+            variant={activeTab === 'nodes' ? 'default' : 'outline'}
+            className="flex-1"
+          >
+            Ноды
+          </Button>
+        </div>
+
+        {activeTab === 'instances' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left panel - Instances */}
           <div className="lg:col-span-1 space-y-4">
@@ -735,6 +809,64 @@ function App() {
             </Card>
           </div>
         </div>
+        )}
+
+        {activeTab === 'nodes' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold">Управление нодами</h2>
+            <Button onClick={() => setShowAddNodeDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Добавить ноду
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {nodes.map(node => (
+              <Card key={node.id}>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>{node.name}</span>
+                    <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
+                      {node.status || 'unknown'}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Host:</span> {node.host}:{node.port}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const status = await checkNodeHealth(node.id);
+                        showNotification(`Нода ${node.name}: ${status}`);
+                      }}
+                      className="flex-1"
+                    >
+                      Проверить
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteNode(node.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {nodes.length === 0 && (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                Нет добавленных нод
+              </div>
+            )}
+          </div>
+        </div>
+        )}
       </div>
 
       {/* Notifications */}
@@ -1309,6 +1441,60 @@ function App() {
                 </div>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Node Dialog */}
+      <Dialog open={showAddNodeDialog} onOpenChange={setShowAddNodeDialog}>
+        <DialogContent onClose={() => setShowAddNodeDialog(false)} className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Добавить ноду</DialogTitle>
+            <DialogDescription>
+              Добавьте новый сервер для распределённого развёртывания
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="node_name">Название</Label>
+              <Input
+                id="node_name"
+                placeholder="Node 1"
+                value={newNode.name}
+                onChange={(e) => setNewNode({ ...newNode, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_host">Host (IP или домен)</Label>
+              <Input
+                id="node_host"
+                placeholder="192.168.1.100"
+                value={newNode.host}
+                onChange={(e) => setNewNode({ ...newNode, host: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_port">Port</Label>
+              <Input
+                id="node_port"
+                type="number"
+                value={newNode.port}
+                onChange={(e) => setNewNode({ ...newNode, port: parseInt(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_token">Token</Label>
+              <Input
+                id="node_token"
+                type="password"
+                placeholder="Токен аутентификации ноды"
+                value={newNode.token}
+                onChange={(e) => setNewNode({ ...newNode, token: e.target.value })}
+              />
+            </div>
+            <Button onClick={addNode} className="w-full">
+              Добавить ноду
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
