@@ -564,6 +564,7 @@ def generate_room_ids():
                 '-dns', dns,
                 '-amount', str(amount)
             ],
+            environment={},  # No SOCKS proxy for generation mode
             remove=True,
             detach=False,
             stdout=True,
