@@ -15,7 +15,8 @@ import {
   Activity,
   Terminal,
   X,
-  QrCode as QrCodeIcon
+  QrCode as QrCodeIcon,
+  Settings
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -69,6 +70,12 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showRoomIdPicker, setShowRoomIdPicker] = useState(false);
   const [roomIdPickerTarget, setRoomIdPickerTarget] = useState(null); // 'new' or 'edit'
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    username: '',
+    password: '',
+    newPassword: ''
+  });
   const [notifications, setNotifications] = useState([]);
   const [carriers, setCarriers] = useState([]);
   const [transports, setTransports] = useState([]);
@@ -276,6 +283,24 @@ function App() {
       return response.data.status === 'ok' ? 'online' : 'offline';
     } catch (err) {
       return 'offline';
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!settingsForm.username || !settingsForm.password) {
+      showNotification('Заполните все поля!', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password
+      });
+      showNotification('Настройки сохранены');
+      setShowSettingsDialog(false);
+      setSettingsForm({ username: '', password: '', newPassword: '' });
+    } catch (err) {
+      showNotification('Ошибка сохранения настроек', 'error');
     }
   };
 
@@ -588,6 +613,10 @@ function App() {
               />
               Auto-refresh
             </label>
+            <Button variant="outline" size="sm" onClick={() => setShowSettingsDialog(true)}>
+              <Settings className="h-4 w-4 mr-2" />
+              Настройки
+            </Button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Выход
@@ -1779,6 +1808,53 @@ function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Настройки панели</DialogTitle>
+            <DialogDescription>Изменить логин и пароль</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="settings_username">Новый логин</Label>
+              <Input
+                id="settings_username"
+                placeholder="admin"
+                value={settingsForm.username}
+                onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings_password">Текущий пароль</Label>
+              <Input
+                id="settings_password"
+                type="password"
+                placeholder="Введите текущий пароль"
+                value={settingsForm.password}
+                onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings_new_password">Новый пароль (оставьте пустым чтобы не менять)</Label>
+              <Input
+                id="settings_new_password"
+                type="password"
+                placeholder="Новый пароль"
+                value={settingsForm.newPassword}
+                onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
+              />
+            </div>
+
+            <Button onClick={saveSettings} className="w-full">
+              Сохранить настройки
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
