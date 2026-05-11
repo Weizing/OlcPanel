@@ -25,13 +25,10 @@ OlcPanel — это Docker-based веб-панель для управления
 
 **Возможности:**
 - Управление инстансами OlcRTC через Docker
-- Поддержка carriers: wbstream, jazz, telemost
-- Поддержка transports: datachannel, vp8channel, seichannel, videochannel
 - Генерация Room ID и Encryption Key
 - URI генерация в формате `olcrtc://`
 - Логи и мониторинг CPU/RAM в реальном времени
 - JWT аутентификация
-- Вырвиглазный vaporwave дизайн
 
 ## Технологии
 

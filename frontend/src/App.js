@@ -15,7 +15,8 @@ import {
   Activity,
   Terminal,
   X,
-  QrCode as QrCodeIcon
+  QrCode as QrCodeIcon,
+  Settings
 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -45,6 +46,18 @@ function App() {
   const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
   const [subscriptionUrls, setSubscriptionUrls] = useState([]);
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [activeTab, setActiveTab] = useState('instances'); // 'instances' or 'nodes'
+  const [nodes, setNodes] = useState([]);
+  const [showAddNodeDialog, setShowAddNodeDialog] = useState(false);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [newNode, setNewNode] = useState({
+    name: '',
+    host: '',
+    port: 3002,
+    token: ''
+  });
+  const [nodeSetupData, setNodeSetupData] = useState(null);
+  const [showNodeSetupDialog, setShowNodeSetupDialog] = useState(false);
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -55,6 +68,14 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showRoomIdPicker, setShowRoomIdPicker] = useState(false);
+  const [roomIdPickerTarget, setRoomIdPickerTarget] = useState(null); // 'new' or 'edit'
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    username: '',
+    password: '',
+    newPassword: ''
+  });
   const [notifications, setNotifications] = useState([]);
   const [carriers, setCarriers] = useState([]);
   const [transports, setTransports] = useState([]);
@@ -66,7 +87,7 @@ function App() {
     carrier: 'wbstream',
     transport: 'datachannel',
     mode: 'srv',
-    socks_port: 1080,
+    socks_port: '',
     transport_params: {},
     debug: false,
     profile_name: '',
@@ -89,6 +110,7 @@ function App() {
       fetchCarriers();
       fetchTransports();
       fetchStatus();
+      fetchNodes();
       const interval = setInterval(() => {
         if (autoRefresh) {
           fetchStatus();
@@ -217,6 +239,71 @@ function App() {
     }
   };
 
+  const fetchNodes = async () => {
+    try {
+      const response = await axios.get('/api/nodes');
+      setNodes(response.data.nodes);
+    } catch (err) {
+      console.error('Failed to fetch nodes:', err);
+    }
+  };
+
+  const addNode = async () => {
+    if (!newNode.name || !newNode.host) {
+      showNotification('Заполни название и host!', 'error');
+      return;
+    }
+    try {
+      const response = await axios.post('/api/nodes', newNode);
+      setShowAddNodeDialog(false);
+      setNewNode({ name: '', host: '', port: 3002, token: '' });
+      setNodeSetupData(response.data);
+      setShowNodeSetupDialog(true);
+      fetchNodes();
+      showNotification('Нода добавлена');
+    } catch (err) {
+      showNotification('Ошибка добавления ноды', 'error');
+    }
+  };
+
+  const deleteNode = async (nodeId) => {
+    if (!window.confirm('Удалить ноду?')) return;
+    try {
+      await axios.delete(`/api/nodes/${nodeId}`);
+      fetchNodes();
+      showNotification('Нода удалена');
+    } catch (err) {
+      showNotification('Ошибка удаления ноды', 'error');
+    }
+  };
+
+  const checkNodeHealth = async (nodeId) => {
+    try {
+      const response = await axios.get(`/api/nodes/${nodeId}/health`);
+      return response.data.status === 'ok' ? 'online' : 'offline';
+    } catch (err) {
+      return 'offline';
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!settingsForm.username || !settingsForm.password) {
+      showNotification('Заполните все поля!', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password
+      });
+      showNotification('Настройки сохранены');
+      setShowSettingsDialog(false);
+      setSettingsForm({ username: '', password: '', newPassword: '' });
+    } catch (err) {
+      showNotification('Ошибка сохранения настроек', 'error');
+    }
+  };
+
   const generateKey = () => {
     const chars = '0123456789abcdef';
     let key = '';
@@ -255,6 +342,21 @@ function App() {
     setGeneratedRooms(updatedRooms);
     localStorage.setItem('generatedRooms', JSON.stringify(updatedRooms));
     showNotification('Room ID удалён');
+  };
+
+  const selectRoomId = (roomId) => {
+    if (roomIdPickerTarget === 'new') {
+      setNewUser({ ...newUser, room_id: roomId });
+    } else if (roomIdPickerTarget === 'edit') {
+      setEditingUser({ ...editingUser, room_id: roomId });
+    }
+    setShowRoomIdPicker(false);
+    showNotification('Room ID выбран');
+  };
+
+  const openRoomIdPicker = (target) => {
+    setRoomIdPickerTarget(target);
+    setShowRoomIdPicker(true);
   };
 
   const copyToClipboard = async (text, label = 'Текст') => {
@@ -511,6 +613,10 @@ function App() {
               />
               Auto-refresh
             </label>
+            <Button variant="outline" size="sm" onClick={() => setShowSettingsDialog(true)}>
+              <Settings className="h-4 w-4 mr-2" />
+              Настройки
+            </Button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" />
               Выход
@@ -521,6 +627,25 @@ function App() {
 
       {/* Main content */}
       <div className="container mx-auto px-4 py-6">
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6">
+          <Button
+            onClick={() => setActiveTab('instances')}
+            variant={activeTab === 'instances' ? 'default' : 'outline'}
+            className="flex-1"
+          >
+            Инстансы
+          </Button>
+          <Button
+            onClick={() => setActiveTab('nodes')}
+            variant={activeTab === 'nodes' ? 'default' : 'outline'}
+            className="flex-1"
+          >
+            Ноды
+          </Button>
+        </div>
+
+        {activeTab === 'instances' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left panel - Instances */}
           <div className="lg:col-span-1 space-y-4">
@@ -632,6 +757,7 @@ function App() {
                                 </Badge>
                               </div>
                               <div className="space-y-1 text-sm mb-3">
+                                <div><span className="text-muted-foreground">Node:</span> {user.node_id === 'local' ? 'Local' : nodes.find(n => n.id === user.node_id)?.name || user.node_id}</div>
                                 <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
                                 <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
                                 {user.mode === 'cnc' && (
@@ -639,6 +765,11 @@ function App() {
                                 )}
                                 {user.mode === 'srv' && user.socks_port && (
                                   <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                                )}
+                                {user.state === 'running' && user.memory_mb && user.memory_mb > 0 && (
+                                  <div className="text-xs text-blue-500">
+                                    <span className="text-muted-foreground">Memory:</span> {user.memory_mb} MB
+                                  </div>
                                 )}
                                 {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
                                   <>
@@ -735,6 +866,62 @@ function App() {
             </Card>
           </div>
         </div>
+        )}
+
+        {activeTab === 'nodes' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={() => setShowAddNodeDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Добавить ноду
+            </Button>
+          </div>
+
+          {nodes.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center text-muted-foreground">
+                  <Server className="h-12 w-12 mb-4" />
+                  <p>Нет нод</p>
+                  <p className="text-sm mt-2">Добавьте ноду для распределённого управления</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {nodes.map(node => (
+                <Card
+                  key={node.id}
+                  className="cursor-pointer transition-all hover:shadow-lg hover:border-primary"
+                  onClick={() => setSelectedNode(node)}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Server className="h-5 w-5 text-primary" />
+                        <span className="font-semibold text-lg">{node.name}</span>
+                      </div>
+                      <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
+                        {node.status || 'unknown'}
+                      </Badge>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Host:</span>
+                        <span className="font-mono">{node.host}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Port:</span>
+                        <span className="font-mono">{node.port}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
       </div>
 
       {/* Notifications */}
@@ -762,23 +949,57 @@ function App() {
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
+              <Label htmlFor="node_id">Нода</Label>
+              <Select
+                id="node_id"
+                value={newUser.node_id || 'local'}
+                onChange={(e) => setNewUser({ ...newUser, node_id: e.target.value })}
+              >
+                <option value="local">Локальная (этот сервер)</option>
+                {nodes.filter(n => n.status === 'online').map(node => (
+                  <option key={node.id} value={node.id}>
+                    {node.name} ({node.host}:{node.port})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="client_id">Client ID</Label>
-              <Input
-                id="client_id"
-                placeholder="my-client"
-                value={newUser.client_id}
-                onChange={(e) => setNewUser({ ...newUser, client_id: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="client_id"
+                  placeholder="my-client"
+                  value={newUser.client_id}
+                  onChange={(e) => setNewUser({ ...newUser, client_id: e.target.value })}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={() => {
+                    const randomId = 'client-' + Math.random().toString(36).substring(2, 10);
+                    setNewUser({ ...newUser, client_id: randomId });
+                  }}
+                  variant="outline"
+                >
+                  Генерировать
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="room_id">Room ID</Label>
-              <Input
-                id="room_id"
-                placeholder="room-id"
-                value={newUser.room_id}
-                onChange={(e) => setNewUser({ ...newUser, room_id: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="room_id"
+                  placeholder="room-id"
+                  value={newUser.room_id}
+                  onChange={(e) => setNewUser({ ...newUser, room_id: e.target.value })}
+                  className="flex-1"
+                />
+                <Button onClick={() => openRoomIdPicker('new')} variant="outline">
+                  Генерировать
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -895,17 +1116,16 @@ function App() {
                 </Select>
               </div>
 
-              {newUser.mode === 'cnc' && (
-                <div className="space-y-2">
-                  <Label htmlFor="socks_port">SOCKS5 Port</Label>
-                  <Input
-                    id="socks_port"
-                    type="number"
-                    value={newUser.socks_port}
-                    onChange={(e) => setNewUser({ ...newUser, socks_port: parseInt(e.target.value) })}
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="socks_port">SOCKS5 Port (оставьте пустым для автовыбора)</Label>
+                <Input
+                  id="socks_port"
+                  type="number"
+                  placeholder="Автоматически"
+                  value={newUser.socks_port}
+                  onChange={(e) => setNewUser({ ...newUser, socks_port: e.target.value ? parseInt(e.target.value) : '' })}
+                />
+              </div>
             </div>
 
             {newUser.mode === 'srv' && (
@@ -965,32 +1185,80 @@ function App() {
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
+                  <Label htmlFor="edit_node_id">Нода</Label>
+                  <Select
+                    id="edit_node_id"
+                    value={editingUser.node_id || 'local'}
+                    onChange={(e) => setEditingUser({ ...editingUser, node_id: e.target.value })}
+                  >
+                    <option value="local">Локальная (этот сервер)</option>
+                    {nodes.filter(n => n.status === 'online').map(node => (
+                      <option key={node.id} value={node.id}>
+                        {node.name} ({node.host}:{node.port})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="edit_client_id">Client ID</Label>
-                  <Input
-                    id="edit_client_id"
-                    value={editingUser.client_id}
-                    onChange={(e) => setEditingUser({ ...editingUser, client_id: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_client_id"
+                      value={editingUser.client_id}
+                      onChange={(e) => setEditingUser({ ...editingUser, client_id: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => {
+                        const randomId = 'client-' + Math.random().toString(36).substring(2, 10);
+                        setEditingUser({ ...editingUser, client_id: randomId });
+                      }}
+                      variant="outline"
+                    >
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_key">Encryption Key (оставь пустым чтобы не менять)</Label>
-                  <Input
-                    id="edit_key"
-                    placeholder="Не изменять"
-                    value={editingUser.key}
-                    onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_key"
+                      placeholder="Не изменять"
+                      value={editingUser.key}
+                      onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => {
+                        const key = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                          .map(b => b.toString(16).padStart(2, '0'))
+                          .join('');
+                        setEditingUser({ ...editingUser, key });
+                      }}
+                      variant="outline"
+                    >
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_room_id">Room ID (оставь пустым чтобы не менять)</Label>
-                  <Input
-                    id="edit_room_id"
-                    placeholder="Не изменять"
-                    value={editingUser.room_id}
-                    onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_room_id"
+                      placeholder="Не изменять"
+                      value={editingUser.room_id}
+                      onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button onClick={() => openRoomIdPicker('edit')} variant="outline">
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1074,17 +1342,16 @@ function App() {
                     </Select>
                   </div>
 
-                  {editingUser.mode === 'cnc' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="edit_socks_port">SOCKS5 Port</Label>
-                      <Input
-                        id="edit_socks_port"
-                        type="number"
-                        value={editingUser.socks_port}
-                        onChange={(e) => setEditingUser({ ...editingUser, socks_port: parseInt(e.target.value) })}
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_socks_port">SOCKS5 Port (оставьте пустым для автовыбора)</Label>
+                    <Input
+                      id="edit_socks_port"
+                      type="number"
+                      placeholder="Автоматически"
+                      value={editingUser.socks_port}
+                      onChange={(e) => setEditingUser({ ...editingUser, socks_port: e.target.value ? parseInt(e.target.value) : '' })}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -1309,6 +1576,359 @@ function App() {
                 </div>
               </div>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Node Dialog */}
+      <Dialog open={showAddNodeDialog} onOpenChange={setShowAddNodeDialog}>
+        <DialogContent onClose={() => setShowAddNodeDialog(false)} className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Добавить ноду</DialogTitle>
+            <DialogDescription>
+              Добавьте новый сервер для распределённого развёртывания
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="node_name">Название</Label>
+              <Input
+                id="node_name"
+                placeholder="Node 1"
+                value={newNode.name}
+                onChange={(e) => setNewNode({ ...newNode, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_host">Host (IP или домен)</Label>
+              <Input
+                id="node_host"
+                placeholder="192.168.1.100"
+                value={newNode.host}
+                onChange={(e) => setNewNode({ ...newNode, host: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_port">Port</Label>
+              <Input
+                id="node_port"
+                type="number"
+                value={newNode.port}
+                onChange={(e) => setNewNode({ ...newNode, port: parseInt(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="node_token">Token (оставьте пустым для автогенерации)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="node_token"
+                  type="password"
+                  placeholder="Токен аутентификации ноды"
+                  value={newNode.token}
+                  onChange={(e) => setNewNode({ ...newNode, token: e.target.value })}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={() => {
+                    const randomToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                      .map(b => b.toString(16).padStart(2, '0'))
+                      .join('');
+                    setNewNode({ ...newNode, token: randomToken });
+                  }}
+                  variant="outline"
+                >
+                  Генерировать
+                </Button>
+              </div>
+            </div>
+            <Button onClick={addNode} className="w-full">
+              Добавить ноду
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNodeSetupDialog} onOpenChange={setShowNodeSetupDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Настройка ноды</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold mb-2">Инструкции по установке:</h3>
+              <ol className="list-decimal list-inside space-y-1 text-sm">
+                <li>Создайте директорию на сервере: mkdir -p /opt/olcpanel-node && cd /opt/olcpanel-node</li>
+                <li>Создайте файл docker-compose.yml с содержимым ниже</li>
+                <li>Запустите: docker compose up -d</li>
+                <li>Проверьте статус: docker compose logs -f</li>
+              </ol>
+            </div>
+
+            {nodeSetupData && (
+              <>
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold">docker-compose.yml:</h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(nodeSetupData.docker_compose);
+                      }}
+                    >
+                      Копировать
+                    </Button>
+                  </div>
+                  <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto max-h-96">
+                    {nodeSetupData.docker_compose}
+                  </pre>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold mb-2">Токен ноды:</h3>
+                  <div className="flex gap-2">
+                    <Input
+                      value={nodeSetupData.node.token}
+                      readOnly
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(nodeSetupData.node.token);
+                      }}
+                    >
+                      Копировать
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <Button onClick={() => setShowNodeSetupDialog(false)} className="w-full">
+              Закрыть
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Node Details Dialog */}
+      <Dialog open={selectedNode !== null} onOpenChange={() => setSelectedNode(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {selectedNode && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Server className="h-5 w-5" />
+                  {selectedNode.name}
+                  <Badge variant={selectedNode.status === 'online' ? 'success' : 'secondary'}>
+                    {selectedNode.status || 'unknown'}
+                  </Badge>
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6 mt-4">
+                {/* Node Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Host</Label>
+                    <div className="font-mono text-sm mt-1">{selectedNode.host}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Port</Label>
+                    <div className="font-mono text-sm mt-1">{selectedNode.port}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Status</Label>
+                    <div className="text-sm mt-1">{selectedNode.status || 'unknown'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Created</Label>
+                    <div className="text-sm mt-1">
+                      {selectedNode.created_at ? new Date(selectedNode.created_at * 1000).toLocaleString() : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const status = await checkNodeHealth(selectedNode.id);
+                      showNotification(`Нода ${selectedNode.name}: ${status}`);
+                    }}
+                    className="flex-1"
+                  >
+                    Проверить подключение
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      if (window.confirm(`Удалить ноду ${selectedNode.name}?`)) {
+                        deleteNode(selectedNode.id);
+                        setSelectedNode(null);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Удалить ноду
+                  </Button>
+                </div>
+
+                {/* Running Instances */}
+                <div>
+                  <h3 className="font-semibold mb-3">Запущенные инстансы на этой ноде</h3>
+                  <div className="space-y-2">
+                    {users.filter(u => u.node_id === selectedNode.id && u.state === 'running').length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Нет запущенных инстансов
+                      </p>
+                    ) : (
+                      users.filter(u => u.node_id === selectedNode.id && u.state === 'running').map(user => (
+                        <Card key={user.id}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-mono text-sm">#{user.id} - {user.client_id}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {user.carrier} / {user.transport} / {user.mode}
+                                </div>
+                              </div>
+                              <Badge variant="success">Running</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Настройки панели</DialogTitle>
+            <DialogDescription>Изменить логин и пароль</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="settings_username">Новый логин</Label>
+              <Input
+                id="settings_username"
+                placeholder="admin"
+                value={settingsForm.username}
+                onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings_password">Текущий пароль</Label>
+              <Input
+                id="settings_password"
+                type="password"
+                placeholder="Введите текущий пароль"
+                value={settingsForm.password}
+                onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="settings_new_password">Новый пароль (оставьте пустым чтобы не менять)</Label>
+              <Input
+                id="settings_new_password"
+                type="password"
+                placeholder="Новый пароль"
+                value={settingsForm.newPassword}
+                onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
+              />
+            </div>
+
+            <Button onClick={saveSettings} className="w-full">
+              Сохранить настройки
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Room ID Picker Dialog */}
+      <Dialog open={showRoomIdPicker} onOpenChange={setShowRoomIdPicker}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Выбрать Room ID</DialogTitle>
+            <DialogDescription>Сгенерируйте или выберите существующий Room ID</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="picker_carrier">Carrier</Label>
+                <Select
+                  id="picker_carrier"
+                  value={genConfig.carrier}
+                  onChange={(e) => setGenConfig({ ...genConfig, carrier: e.target.value })}
+                >
+                  <option value="wbstream">wbstream</option>
+                  <option value="jazz">jazz</option>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="picker_amount">Количество</Label>
+                <Input
+                  id="picker_amount"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={genConfig.amount}
+                  onChange={(e) => setGenConfig({ ...genConfig, amount: parseInt(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="picker_dns">DNS сервер</Label>
+              <Input
+                id="picker_dns"
+                value={genConfig.dns}
+                onChange={(e) => setGenConfig({ ...genConfig, dns: e.target.value })}
+              />
+            </div>
+
+            <Button onClick={generateRoomIds} disabled={isGenerating} className="w-full">
+              {isGenerating ? 'Генерация...' : 'Сгенерировать'}
+            </Button>
+
+            {generatedRooms.length > 0 && (
+              <div className="space-y-2 p-4 border rounded-lg">
+                <h3 className="font-semibold">Доступные Room ID:</h3>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {generatedRooms.map((roomId, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-muted rounded hover:bg-muted/80 transition-colors">
+                      <span className="text-sm text-muted-foreground font-semibold min-w-[2rem]">#{idx + 1}</span>
+                      <span className="flex-1 font-mono text-sm truncate">{roomId}</span>
+                      <Button
+                        size="sm"
+                        onClick={() => selectRoomId(roomId)}
+                      >
+                        Выбрать
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => removeRoomId(idx)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

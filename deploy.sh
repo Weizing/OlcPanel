@@ -354,9 +354,8 @@ fi
 print_step "Шаг 6/7: Сборка OlcRTC образа"
 
 if [ -d "olcrtc" ]; then
-    cd olcrtc
-    docker build -t olcrtc:latest .
-    cd ..
+    echo "Сборка OlcRTC образа (это может занять несколько минут)..."
+    docker build -f olcrtc/Dockerfile -t olcrtc:latest ./olcrtc
     print_success "OlcRTC образ собран"
 else
     print_warning "Директория olcrtc не найдена, пропускаем сборку"

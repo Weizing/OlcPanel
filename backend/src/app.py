@@ -6,6 +6,7 @@ import time
 import psutil
 import docker
 import jwt
+import requests
 from datetime import datetime, timedelta
 from collections import deque
 from flask import Flask, jsonify, request, Response
@@ -19,6 +20,7 @@ CORS(app)
 DATA_DIR = '/app/data'
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
+NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -29,6 +31,8 @@ users = {}
 containers = {}
 logs = {}
 traffic_stats = {}
+memory_stats = {}
+nodes = {}
 lock = threading.RLock()
 
 CARRIERS = ['wbstream', 'jazz', 'telemost']
@@ -117,6 +121,68 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=2)
+
+def load_nodes():
+    global nodes
+    if os.path.exists(NODES_FILE):
+        with open(NODES_FILE, 'r') as f:
+            nodes = json.load(f)
+    else:
+        nodes = {}
+
+def save_nodes():
+    with open(NODES_FILE, 'w') as f:
+        json.dump(nodes, f, indent=2)
+
+def check_node_status(node_id):
+    """Check if a node is online"""
+    try:
+        node = nodes.get(node_id)
+        if not node:
+            return False
+
+        url = f"http://{node['host']}:{node['port']}/health"
+        response = requests.get(url, timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
+def monitor_nodes():
+    """Background thread to monitor node health"""
+    while True:
+        try:
+            with lock:
+                for node_id in list(nodes.keys()):
+                    is_online = check_node_status(node_id)
+                    nodes[node_id]['status'] = 'online' if is_online else 'offline'
+                save_nodes()
+        except Exception as e:
+            print(f"Error monitoring nodes: {e}")
+
+        time.sleep(10)  # Check every 10 seconds
+
+def call_node_api(node_id, method, endpoint, data=None):
+    """Call remote node API"""
+    if node_id not in nodes:
+        raise Exception(f"Node {node_id} not found")
+
+    node = nodes[node_id]
+    url = f"http://{node['host']}:{node['port']}{endpoint}"
+    headers = {'X-Node-Token': node['token']}
+
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers, timeout=10)
+        elif method == 'POST':
+            response = requests.post(url, headers=headers, json=data, timeout=10)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers, timeout=10)
+
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise Exception(f"Node API call failed: {str(e)}")
+
 
 def require_auth(f):
     @wraps(f)
@@ -264,8 +330,36 @@ def read_traffic_stats(uid):
         if uid in traffic_stats:
             del traffic_stats[uid]
 
+def monitor_memory():
+    """Background thread to monitor container memory usage"""
+    while True:
+        try:
+            with lock:
+                for uid in list(containers.keys()):
+                    try:
+                        container = docker_client.containers.get(containers[uid])
+                        if container.status == 'running':
+                            stats = container.stats(stream=False)
+                            memory_usage = stats['memory_stats'].get('usage', 0)
+                            memory_stats[uid] = round(memory_usage / (1024 * 1024), 1)
+                    except:
+                        if uid in memory_stats:
+                            del memory_stats[uid]
+        except Exception as e:
+            print(f"Error monitoring memory: {e}")
+
+        time.sleep(5)  # Update every 5 seconds
+
 def start_olcrtc_container(uid):
     with lock:
+        user = users[uid]
+        node_id = user.get('node_id', 'local')
+
+        # Check if running on remote node
+        if node_id != 'local':
+            return start_remote_container(uid, node_id)
+
+        # Local container logic
         if uid in containers:
             try:
                 container = docker_client.containers.get(containers[uid])
@@ -279,7 +373,6 @@ def start_olcrtc_container(uid):
             except:
                 pass
 
-        user = users[uid]
         cmd = build_olcrtc_command(user)
 
         port_bindings = {}
@@ -329,8 +422,70 @@ def start_olcrtc_container(uid):
             print(f"Error starting container: {e}")
             return False
 
+def start_remote_container(uid, node_id):
+    """Start container on remote node"""
+    user = users[uid]
+    cmd = build_olcrtc_command(user)
+
+    port_bindings = {}
+    environment = {}
+
+    if user.get('mode') == 'cnc':
+        socks_port = user.get('socks_port', 1080)
+        port_bindings['1080/tcp'] = socks_port
+    elif user.get('mode') == 'srv':
+        socks_port = 8800 + int(uid)
+        environment['SOCKS_PORT'] = '1081'
+        environment['RX_LIMIT'] = str(user.get('rx_limit', 0))
+        environment['TX_LIMIT'] = str(user.get('tx_limit', 0))
+        port_bindings['1081/tcp'] = socks_port
+        users[uid]['socks_port'] = socks_port
+
+    try:
+        result = call_node_api(node_id, 'POST', '/containers/start', {
+            'image': 'olcrtc:latest',
+            'command': cmd,
+            'name': f'olcrtc-{uid}',
+            'ports': port_bindings,
+            'environment': environment,
+            'network_mode': 'bridge'
+        })
+
+        containers[uid] = result['container_id']
+        users[uid]['state'] = 'running'
+        users[uid]['container_id'] = result['container_id']
+        save_users()
+
+        return True
+    except Exception as e:
+        print(f"Error starting remote container: {e}")
+        return False
+
 def stop_olcrtc_container(uid):
     with lock:
+        user = users.get(uid)
+        if not user:
+            return True
+
+        node_id = user.get('node_id', 'local')
+
+        # Stop remote container
+        if node_id != 'local':
+            try:
+                container_id = user.get('container_id')
+                if container_id:
+                    call_node_api(node_id, 'POST', f'/containers/{container_id}/stop')
+            except Exception as e:
+                print(f"Error stopping remote container: {e}")
+
+            if uid in containers:
+                del containers[uid]
+            users[uid]['state'] = 'stopped'
+            users[uid]['container_id'] = None
+            save_users()
+            return True
+
+        # Stop local container
         if uid in containers:
             try:
                 container = docker_client.containers.get(containers[uid])
@@ -368,7 +523,9 @@ def status():
                 'mode': user.get('mode', 'cnc'),
                 'state': user.get('state', 'stopped'),
                 'container_id': user.get('container_id'),
-                'socks_port': user.get('socks_port', 1080)
+                'socks_port': user.get('socks_port', 1080),
+                'node_id': user.get('node_id', 'local'),
+                'memory_mb': memory_stats.get(uid, 0)
             }
             user_list.append(user_data)
 
@@ -422,6 +579,7 @@ def add_user():
             'debug': data.get('debug', False),
             'profile_name': data.get('profile_name', ''),
             'dns': data.get('dns', '1.1.1.1:53'),
+            'node_id': data.get('node_id', 'local'),
             'state': 'stopped',
             'container_id': None
         }
@@ -527,6 +685,24 @@ def stop_user(uid):
 @require_auth
 def get_logs(uid):
     with lock:
+        user = users.get(uid)
+        if not user:
+            return jsonify({'logs': []})
+
+        node_id = user.get('node_id', 'local')
+
+        # Get logs from remote node
+        if node_id != 'local':
+            try:
+                container_id = user.get('container_id')
+                if container_id:
+                    result = call_node_api(node_id, 'GET', f'/containers/{container_id}/logs')
+                    return jsonify({'logs': result.get('logs', [])})
+            except Exception as e:
+                print(f"Error getting remote logs: {e}")
+                return jsonify({'logs': [f"Error: {str(e)}"]})
+
+        # Get local logs
         if uid in logs:
             return jsonify({'logs': list(logs[uid])})
         return jsonify({'logs': []})
@@ -604,6 +780,11 @@ def generate_uri(uid):
 @require_auth
 def get_traffic(uid):
     with lock:
+        user = users.get(uid)
+        if user and user.get('node_id') != 'local':
+            # Remote nodes don't support traffic monitoring yet
+            return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
+
         if uid in traffic_stats:
             return jsonify(traffic_stats[uid])
         return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
@@ -677,6 +858,224 @@ def list_subscriptions():
 
         return jsonify({'client_ids': sorted(list(client_ids))})
 
+@app.route('/api/nodes', methods=['GET'])
+@require_auth
+def get_nodes():
+    """Get all nodes"""
+    with lock:
+        return jsonify({'nodes': list(nodes.values())})
+
+@app.route('/api/nodes', methods=['POST'])
+@require_auth
+def add_node():
+    """Add a new node"""
+    data = request.json
+    node_id = str(len(nodes) + 1)
+
+    # Generate random token if not provided
+    import secrets
+    token = data.get('token') or secrets.token_urlsafe(32)
+
+    node = {
+        'id': node_id,
+        'name': data.get('name'),
+        'host': data.get('host'),
+        'port': data.get('port', 3002),
+        'token': token,
+        'status': 'unknown',
+        'created_at': time.time()
+    }
+
+    # Generate docker-compose.yml for the node with embedded Python code
+    compose_content = f"""version: '3.8'
+
+services:
+  olcpanel-node:
+    image: python:3.11-slim
+    container_name: olcpanel-node
+    restart: unless-stopped
+    ports:
+      - "{node['port']}:3002"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - NODE_TOKEN={token}
+      - PYTHONUNBUFFERED=1
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        pip install --no-cache-dir flask docker psutil
+        cat > /app/node_api.py << 'EOF'
+        import os
+        import json
+        import docker
+        from flask import Flask, jsonify, request
+        from functools import wraps
+
+        app = Flask(__name__)
+        docker_client = docker.DockerClient(base_url="unix://var/run/docker.sock")
+
+        NODE_TOKEN = os.environ.get("NODE_TOKEN", "change-me")
+
+        def require_token(f):
+            @wraps(f)
+            def decorated(*args, **kwargs):
+                token = request.headers.get("X-Node-Token")
+                if not token or token != NODE_TOKEN:
+                    return jsonify({{"error": "Unauthorized"}}), 401
+                return f(*args, **kwargs)
+            return decorated
+
+        @app.route("/health", methods=["GET"])
+        def health():
+            return jsonify({{"status": "ok", "docker": docker_client.ping()}})
+
+        @app.route("/containers", methods=["GET"])
+        @require_token
+        def list_containers():
+            try:
+                containers = docker_client.containers.list(all=True, filters={{"name": "olcrtc-"}})
+                result = []
+                for container in containers:
+                    result.append({{
+                        "id": container.id[:12],
+                        "name": container.name,
+                        "status": container.status,
+                        "image": container.image.tags[0] if container.image.tags else "unknown"
+                    }})
+                return jsonify({{"containers": result}})
+            except Exception as e:
+                return jsonify({{"error": str(e)}}), 500
+
+        @app.route("/containers/start", methods=["POST"])
+        @require_token
+        def start_container():
+            try:
+                data = request.json
+                container = docker_client.containers.run(
+                    data.get("image", "olcrtc:latest"),
+                    command=data.get("command", []),
+                    detach=True,
+                    name=data.get("name"),
+                    ports=data.get("ports", {{}}),
+                    environment=data.get("environment", {{}}),
+                    remove=False,
+                    network_mode=data.get("network_mode", "bridge")
+                )
+                return jsonify({{"container_id": container.id, "status": "started"}})
+            except Exception as e:
+                return jsonify({{"error": str(e)}}), 500
+
+        @app.route("/containers/<container_id>/stop", methods=["POST"])
+        @require_token
+        def stop_container(container_id):
+            try:
+                container = docker_client.containers.get(container_id)
+                container.stop(timeout=5)
+                container.remove()
+                return jsonify({{"status": "stopped"}})
+            except Exception as e:
+                return jsonify({{"error": str(e)}}), 500
+
+        @app.route("/containers/<container_id>/logs", methods=["GET"])
+        @require_token
+        def get_container_logs(container_id):
+            try:
+                container = docker_client.containers.get(container_id)
+                logs = container.logs(tail=1000).decode("utf-8", errors="ignore")
+                return jsonify({{"logs": logs.split("\\n")}})
+            except Exception as e:
+                return jsonify({{"error": str(e)}}), 500
+
+        @app.route("/stats", methods=["GET"])
+        @require_token
+        def get_stats():
+            try:
+                import psutil
+                return jsonify({{
+                    "cpu_percent": psutil.cpu_percent(interval=1),
+                    "memory_percent": psutil.virtual_memory().percent,
+                    "disk_percent": psutil.disk_usage("/").percent
+                }})
+            except Exception as e:
+                return jsonify({{"error": str(e)}}), 500
+
+        if __name__ == "__main__":
+            app.run(host="0.0.0.0", port=3002, debug=False)
+        EOF
+        mkdir -p /app
+        python /app/node_api.py
+    working_dir: /app
+"""
+
+    node['docker_compose'] = compose_content
+
+    with lock:
+        nodes[node_id] = node
+        save_nodes()
+
+    return jsonify({
+        'success': True,
+        'node': node,
+        'docker_compose': compose_content,
+        'instructions': f"""
+Инструкция по установке ноды:
+
+1. Создайте директорию на сервере:
+   mkdir -p /opt/olcpanel-node && cd /opt/olcpanel-node
+
+2. Создайте файл docker-compose.yml с содержимым выше
+
+3. Запустите ноду:
+   docker compose up -d
+
+4. Проверьте статус:
+   docker compose logs -f
+
+Нода будет доступна на порту {node['port']}
+"""
+    })
+
+@app.route('/api/nodes/<node_id>', methods=['DELETE'])
+@require_auth
+def delete_node(node_id):
+    """Delete a node"""
+    with lock:
+        if node_id in nodes:
+            del nodes[node_id]
+            save_nodes()
+            return jsonify({'success': True})
+        return jsonify({'error': 'Node not found'}), 404
+
+@app.route('/api/nodes/<node_id>/health', methods=['GET'])
+@require_auth
+def check_node_health(node_id):
+    """Check node health"""
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+
+    node = nodes[node_id]
+    try:
+        import requests
+        response = requests.get(
+            f"http://{node['host']}:{node['port']}/health",
+            timeout=5
+        )
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'offline'}), 500
+
 if __name__ == '__main__':
     load_users()
+    load_nodes()
+
+    # Start node monitoring thread
+    monitor_thread = threading.Thread(target=monitor_nodes, daemon=True)
+    monitor_thread.start()
+
+    # Start memory monitoring thread
+    memory_thread = threading.Thread(target=monitor_memory, daemon=True)
+    memory_thread.start()
+
     app.run(host='0.0.0.0', port=3001, debug=False)
