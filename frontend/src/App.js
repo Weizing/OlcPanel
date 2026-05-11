@@ -87,7 +87,7 @@ function App() {
     carrier: 'wbstream',
     transport: 'datachannel',
     mode: 'srv',
-    socks_port: 1080,
+    socks_port: '',
     transport_params: {},
     debug: false,
     profile_name: '',
@@ -1117,12 +1117,13 @@ function App() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="socks_port">SOCKS5 Port</Label>
+                <Label htmlFor="socks_port">SOCKS5 Port (оставьте пустым для автовыбора)</Label>
                 <Input
                   id="socks_port"
                   type="number"
+                  placeholder="Автоматически"
                   value={newUser.socks_port}
-                  onChange={(e) => setNewUser({ ...newUser, socks_port: parseInt(e.target.value) })}
+                  onChange={(e) => setNewUser({ ...newUser, socks_port: e.target.value ? parseInt(e.target.value) : '' })}
                 />
               </div>
             </div>
@@ -1342,12 +1343,13 @@ function App() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="edit_socks_port">SOCKS5 Port</Label>
+                    <Label htmlFor="edit_socks_port">SOCKS5 Port (оставьте пустым для автовыбора)</Label>
                     <Input
                       id="edit_socks_port"
                       type="number"
+                      placeholder="Автоматически"
                       value={editingUser.socks_port}
-                      onChange={(e) => setEditingUser({ ...editingUser, socks_port: parseInt(e.target.value) })}
+                      onChange={(e) => setEditingUser({ ...editingUser, socks_port: e.target.value ? parseInt(e.target.value) : '' })}
                     />
                   </div>
                 </div>
