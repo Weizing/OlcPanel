@@ -44,6 +44,7 @@ function App() {
   const [trafficStats, setTrafficStats] = useState({});
   const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
   const [subscriptionUrls, setSubscriptionUrls] = useState([]);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -555,94 +556,125 @@ function App() {
               <CardHeader>
                 <CardTitle className="text-lg">Инстансы ({users.length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2 max-h-[calc(100vh-20rem)] overflow-y-auto">
                 {users.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Нет инстансов
                   </p>
                 ) : (
-                  users.map(user => (
-                    <Card
-                      key={user.id}
-                      className={`cursor-pointer transition-colors ${
-                        selectedUser === user.id ? 'border-primary' : ''
-                      }`}
-                      onClick={() => selectUser(user.id)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <span className="font-mono text-sm">#{user.id}</span>
-                          <Badge variant={user.state === 'running' ? 'success' : 'secondary'}>
-                            {user.state === 'running' ? 'Running' : 'Stopped'}
-                          </Badge>
+                  (() => {
+                    // Group users by client_id
+                    const grouped = users.reduce((acc, user) => {
+                      const clientId = user.client_id || 'unknown';
+                      if (!acc[clientId]) acc[clientId] = [];
+                      acc[clientId].push(user);
+                      return acc;
+                    }, {});
+
+                    return Object.entries(grouped).map(([clientId, groupUsers]) => (
+                      <div key={clientId} className="space-y-2">
+                        {/* Group Header */}
+                        <div
+                          className="flex items-center justify-between p-2 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                          onClick={() => setCollapsedGroups(prev => ({
+                            ...prev,
+                            [clientId]: !prev[clientId]
+                          }))}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">{clientId}</span>
+                            <Badge variant="outline">{groupUsers.length}</Badge>
+                          </div>
+                          <span className="text-xs">
+                            {collapsedGroups[clientId] ? '▶' : '▼'}
+                          </span>
                         </div>
-                        <div className="space-y-1 text-sm mb-3">
-                          <div><span className="text-muted-foreground">Client:</span> {user.client_id}</div>
-                          <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
-                          <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
-                          {user.mode === 'cnc' && (
-                            <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
-                          )}
-                          {user.mode === 'srv' && user.socks_port && (
-                            <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
-                          )}
-                          {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
-                            <>
-                              <div className="text-xs text-primary">
-                                <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+
+                        {/* Group Items */}
+                        {!collapsedGroups[clientId] && groupUsers.map(user => (
+                          <Card
+                            key={user.id}
+                            className={`cursor-pointer transition-colors ml-4 ${
+                              selectedUser === user.id ? 'border-primary' : ''
+                            }`}
+                            onClick={() => selectUser(user.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <span className="font-mono text-sm">#{user.id}</span>
+                                <Badge variant={user.state === 'running' ? 'success' : 'secondary'}>
+                                  {user.state === 'running' ? 'Running' : 'Stopped'}
+                                </Badge>
                               </div>
-                              <div className="text-xs text-green-500">
-                                <span className="text-muted-foreground">Speed:</span> ↓{trafficStats[user.id].rx_speed} KB/s / ↑{trafficStats[user.id].tx_speed} KB/s
+                              <div className="space-y-1 text-sm mb-3">
+                                <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
+                                <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
+                                {user.mode === 'cnc' && (
+                                  <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                                )}
+                                {user.mode === 'srv' && user.socks_port && (
+                                  <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                                )}
+                                {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
+                                  <>
+                                    <div className="text-xs text-primary">
+                                      <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+                                    </div>
+                                    <div className="text-xs text-green-500">
+                                      <span className="text-muted-foreground">Speed:</span> ↓{trafficStats[user.id].rx_speed} KB/s / ↑{trafficStats[user.id].tx_speed} KB/s
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                            </>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          {user.state === 'running' ? (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={(e) => { e.stopPropagation(); stopUser(user.id); }}
-                              className="flex-1"
-                            >
-                              <Square className="h-3 w-3 mr-1" />
-                              Stop
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={(e) => { e.stopPropagation(); startUser(user.id); }}
-                              className="flex-1"
-                            >
-                              <Play className="h-3 w-3 mr-1" />
-                              Start
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); editUser(user); }}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); generateQrCode(user.id); }}
-                          >
-                            <QrCodeIcon className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); deleteUser(user.id); }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                              <div className="flex gap-1">
+                                {user.state === 'running' ? (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={(e) => { e.stopPropagation(); stopUser(user.id); }}
+                                    className="flex-1"
+                                  >
+                                    <Square className="h-3 w-3 mr-1" />
+                                    Stop
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); startUser(user.id); }}
+                                    className="flex-1"
+                                  >
+                                    <Play className="h-3 w-3 mr-1" />
+                                    Start
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); editUser(user); }}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); generateQrCode(user.id); }}
+                                >
+                                  <QrCodeIcon className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); deleteUser(user.id); }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ));
+                  })()
                 )}
               </CardContent>
             </Card>
