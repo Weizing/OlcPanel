@@ -12,6 +12,7 @@ git pull origin main
 # Rebuild images
 echo ""
 echo "Rebuilding Docker images..."
+docker build -t olcrtc:latest ./olcrtc --no-cache
 docker compose build --no-cache
 
 # Restart services
