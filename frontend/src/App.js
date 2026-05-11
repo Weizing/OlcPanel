@@ -67,6 +67,8 @@ function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showRoomIdPicker, setShowRoomIdPicker] = useState(false);
+  const [roomIdPickerTarget, setRoomIdPickerTarget] = useState(null); // 'new' or 'edit'
   const [notifications, setNotifications] = useState([]);
   const [carriers, setCarriers] = useState([]);
   const [transports, setTransports] = useState([]);
@@ -315,6 +317,21 @@ function App() {
     setGeneratedRooms(updatedRooms);
     localStorage.setItem('generatedRooms', JSON.stringify(updatedRooms));
     showNotification('Room ID удалён');
+  };
+
+  const selectRoomId = (roomId) => {
+    if (roomIdPickerTarget === 'new') {
+      setNewUser({ ...newUser, room_id: roomId });
+    } else if (roomIdPickerTarget === 'edit') {
+      setEditingUser({ ...editingUser, room_id: roomId });
+    }
+    setShowRoomIdPicker(false);
+    showNotification('Room ID выбран');
+  };
+
+  const openRoomIdPicker = (target) => {
+    setRoomIdPickerTarget(target);
+    setShowRoomIdPicker(true);
   };
 
   const copyToClipboard = async (text, label = 'Текст') => {
@@ -930,12 +947,18 @@ function App() {
 
             <div className="space-y-2">
               <Label htmlFor="room_id">Room ID</Label>
-              <Input
-                id="room_id"
-                placeholder="room-id"
-                value={newUser.room_id}
-                onChange={(e) => setNewUser({ ...newUser, room_id: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="room_id"
+                  placeholder="room-id"
+                  value={newUser.room_id}
+                  onChange={(e) => setNewUser({ ...newUser, room_id: e.target.value })}
+                  className="flex-1"
+                />
+                <Button onClick={() => openRoomIdPicker('new')} variant="outline">
+                  Генерировать
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1142,12 +1165,18 @@ function App() {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_room_id">Room ID (оставь пустым чтобы не менять)</Label>
-                  <Input
-                    id="edit_room_id"
-                    placeholder="Не изменять"
-                    value={editingUser.room_id}
-                    onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_room_id"
+                      placeholder="Не изменять"
+                      value={editingUser.room_id}
+                      onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button onClick={() => openRoomIdPicker('edit')} variant="outline">
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1696,6 +1725,83 @@ function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Room ID Picker Dialog */}
+      <Dialog open={showRoomIdPicker} onOpenChange={setShowRoomIdPicker}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Выбрать Room ID</DialogTitle>
+            <DialogDescription>Сгенерируйте или выберите существующий Room ID</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="picker_carrier">Carrier</Label>
+                <Select
+                  id="picker_carrier"
+                  value={genConfig.carrier}
+                  onChange={(e) => setGenConfig({ ...genConfig, carrier: e.target.value })}
+                >
+                  <option value="wbstream">wbstream</option>
+                  <option value="jazz">jazz</option>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="picker_amount">Количество</Label>
+                <Input
+                  id="picker_amount"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={genConfig.amount}
+                  onChange={(e) => setGenConfig({ ...genConfig, amount: parseInt(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="picker_dns">DNS сервер</Label>
+              <Input
+                id="picker_dns"
+                value={genConfig.dns}
+                onChange={(e) => setGenConfig({ ...genConfig, dns: e.target.value })}
+              />
+            </div>
+
+            <Button onClick={generateRoomIds} disabled={isGenerating} className="w-full">
+              {isGenerating ? 'Генерация...' : 'Сгенерировать'}
+            </Button>
+
+            {generatedRooms.length > 0 && (
+              <div className="space-y-2 p-4 border rounded-lg">
+                <h3 className="font-semibold">Доступные Room ID:</h3>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {generatedRooms.map((roomId, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-muted rounded hover:bg-muted/80 transition-colors">
+                      <span className="text-sm text-muted-foreground font-semibold min-w-[2rem]">#{idx + 1}</span>
+                      <span className="flex-1 font-mono text-sm truncate">{roomId}</span>
+                      <Button
+                        size="sm"
+                        onClick={() => selectRoomId(roomId)}
+                      >
+                        Выбрать
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => removeRoomId(idx)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
