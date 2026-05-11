@@ -42,6 +42,8 @@ function App() {
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [qrCodeData, setQrCodeData] = useState(null);
   const [trafficStats, setTrafficStats] = useState({});
+  const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
+  const [subscriptionUrls, setSubscriptionUrls] = useState([]);
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -531,19 +533,12 @@ function App() {
                       showNotification('Нет запущенных инстансов', 'error');
                       return;
                     }
-                    // If only one client_id, copy its URL directly
-                    if (clientIds.length === 1) {
-                      const url = `${window.location.origin}/api/subscription/${clientIds[0]}`;
-                      navigator.clipboard.writeText(url);
-                      showNotification(`Subscription URL для ${clientIds[0]} скопирован`);
-                    } else {
-                      // Show list of client_ids
-                      const message = clientIds.map(id =>
-                        `${window.location.origin}/api/subscription/${id}`
-                      ).join('\n');
-                      navigator.clipboard.writeText(message);
-                      showNotification(`Скопировано ${clientIds.length} subscription URLs`);
-                    }
+                    const urls = clientIds.map(id => ({
+                      clientId: id,
+                      url: `${window.location.origin}/api/subscription/${id}`
+                    }));
+                    setSubscriptionUrls(urls);
+                    setShowSubscriptionDialog(true);
                   } catch (err) {
                     showNotification('Ошибка получения subscription URLs', 'error');
                   }
@@ -1222,6 +1217,41 @@ function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription URLs Dialog */}
+      <Dialog open={showSubscriptionDialog} onOpenChange={setShowSubscriptionDialog}>
+        <DialogContent onClose={() => setShowSubscriptionDialog(false)} className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Subscription URLs</DialogTitle>
+            <DialogDescription>
+              Ссылки на subscription файлы для каждого Client ID
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {subscriptionUrls.map((item, index) => (
+              <div key={index} className="space-y-2">
+                <Label>Client ID: {item.clientId}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={item.url}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    onClick={() => {
+                      navigator.clipboard.writeText(item.url);
+                      showNotification(`URL для ${item.clientId} скопирован`);
+                    }}
+                    variant="outline"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
