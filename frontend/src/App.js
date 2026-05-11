@@ -523,10 +523,30 @@ function App() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => {
-                  const url = `${window.location.origin}/api/subscription`;
-                  navigator.clipboard.writeText(url);
-                  showNotification('Subscription URL скопирован в буфер обмена');
+                onClick={async () => {
+                  try {
+                    const response = await axios.get('/api/subscription/list');
+                    const clientIds = response.data.client_ids;
+                    if (clientIds.length === 0) {
+                      showNotification('Нет запущенных инстансов', 'error');
+                      return;
+                    }
+                    // If only one client_id, copy its URL directly
+                    if (clientIds.length === 1) {
+                      const url = `${window.location.origin}/api/subscription/${clientIds[0]}`;
+                      navigator.clipboard.writeText(url);
+                      showNotification(`Subscription URL для ${clientIds[0]} скопирован`);
+                    } else {
+                      // Show list of client_ids
+                      const message = clientIds.map(id =>
+                        `${window.location.origin}/api/subscription/${id}`
+                      ).join('\n');
+                      navigator.clipboard.writeText(message);
+                      showNotification(`Скопировано ${clientIds.length} subscription URLs`);
+                    }
+                  } catch (err) {
+                    showNotification('Ошибка получения subscription URLs', 'error');
+                  }
                 }}
                 variant="secondary"
                 className="flex-1"
