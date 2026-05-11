@@ -731,12 +731,12 @@ services:
         WORKDIR /app
         RUN pip install --no-cache-dir flask docker psutil
         COPY node_api.py .
-        EXPOSE {node['port']}
+        EXPOSE 3002
         CMD ["python", "node_api.py"]
     container_name: olcpanel-node
     restart: unless-stopped
     ports:
-      - "{node['port']}:{node['port']}"
+      - "{node['port']}:3002"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
@@ -846,7 +846,7 @@ def get_stats():
         return jsonify({{'error': str(e)}}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port={node['port']}, debug=False)
+    app.run(host='0.0.0.0', port=3002, debug=False)
 '''
 
     node['docker_compose'] = compose_content
