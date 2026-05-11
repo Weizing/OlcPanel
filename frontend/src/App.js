@@ -521,6 +521,20 @@ function App() {
                 Генератор
               </Button>
             </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  const url = `${window.location.origin}/api/subscription`;
+                  navigator.clipboard.writeText(url);
+                  showNotification('Subscription URL скопирован в буфер обмена');
+                }}
+                variant="secondary"
+                className="flex-1"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Subscription URL
+              </Button>
+            </div>
 
             <Card>
               <CardHeader>

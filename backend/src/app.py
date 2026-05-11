@@ -608,6 +608,62 @@ def get_traffic(uid):
             return jsonify(traffic_stats[uid])
         return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
 
+@app.route('/api/subscription', methods=['GET'])
+def get_subscription():
+    """Generate subscription file grouping instances by client_id"""
+    with lock:
+        # Group users by client_id
+        subscriptions = {}
+        for uid, user in users.items():
+            if user.get('state') != 'running':
+                continue
+
+            client_id = user.get('client_id', 'unknown')
+            if client_id not in subscriptions:
+                subscriptions[client_id] = []
+
+            # Build URI
+            params_str = ''
+            if user.get('transport_params'):
+                params_list = [f"{k}={v}" for k, v in user['transport_params'].items() if v]
+                if params_list:
+                    params_str = '<' + '&'.join(params_list) + '>'
+
+            uri = f"olcrtc://{user['carrier']}?{user['transport']}{params_str}@{user['room_id']}#{user['key']}%{client_id}"
+            if user.get('profile_name'):
+                uri += f"${user['profile_name']}"
+
+            # Get traffic stats
+            traffic = traffic_stats.get(uid, {})
+            used_mb = traffic.get('total_mb', 0)
+
+            subscriptions[client_id].append({
+                'uri': uri,
+                'name': user.get('profile_name') or f"Instance {uid}",
+                'used': f"{used_mb}mb",
+                'mode': user.get('mode', 'srv'),
+                'transport': user.get('transport', 'datachannel')
+            })
+
+        # Build subscription file content
+        lines = []
+        lines.append(f"#name: OlcPanel Subscription")
+        lines.append(f"#update: {int(time.time())}")
+        lines.append(f"#refresh: 5m")
+        lines.append(f"#color: #22c55e")
+        lines.append("")
+
+        for client_id, instances in subscriptions.items():
+            for instance in instances:
+                lines.append(instance['uri'])
+                lines.append(f"##name: {instance['name']}")
+                lines.append(f"##used: {instance['used']}")
+                lines.append(f"##comment: {instance['mode']} mode, {instance['transport']} transport")
+                lines.append("")
+
+        content = '\n'.join(lines)
+        return Response(content, mimetype='text/plain')
+
 if __name__ == '__main__':
     load_users()
     app.run(host='0.0.0.0', port=3001, debug=False)
