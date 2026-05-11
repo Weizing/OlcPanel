@@ -710,6 +710,7 @@ function App() {
                                 </Badge>
                               </div>
                               <div className="space-y-1 text-sm mb-3">
+                                <div><span className="text-muted-foreground">Node:</span> {user.node_id === 'local' ? 'Local' : nodes.find(n => n.id === user.node_id)?.name || user.node_id}</div>
                                 <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
                                 <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
                                 {user.mode === 'cnc' && (
@@ -926,6 +927,22 @@ function App() {
             <DialogDescription>Создайте новый OlcRTC инстанс</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="node_id">Нода</Label>
+              <Select
+                id="node_id"
+                value={newUser.node_id || 'local'}
+                onChange={(e) => setNewUser({ ...newUser, node_id: e.target.value })}
+              >
+                <option value="local">Локальная (этот сервер)</option>
+                {nodes.filter(n => n.status === 'online').map(node => (
+                  <option key={node.id} value={node.id}>
+                    {node.name} ({node.host}:{node.port})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="client_id">Client ID</Label>
               <Input

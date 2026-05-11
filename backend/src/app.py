@@ -6,6 +6,7 @@ import time
 import psutil
 import docker
 import jwt
+import requests
 from datetime import datetime, timedelta
 from collections import deque
 from flask import Flask, jsonify, request, Response
@@ -131,6 +132,29 @@ def load_nodes():
 def save_nodes():
     with open(NODES_FILE, 'w') as f:
         json.dump(nodes, f, indent=2)
+
+def call_node_api(node_id, method, endpoint, data=None):
+    """Call remote node API"""
+    if node_id not in nodes:
+        raise Exception(f"Node {node_id} not found")
+
+    node = nodes[node_id]
+    url = f"http://{node['host']}:{node['port']}{endpoint}"
+    headers = {'X-Node-Token': node['token']}
+
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers, timeout=10)
+        elif method == 'POST':
+            response = requests.post(url, headers=headers, json=data, timeout=10)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers, timeout=10)
+
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        raise Exception(f"Node API call failed: {str(e)}")
+
 
 def require_auth(f):
     @wraps(f)
@@ -280,6 +304,14 @@ def read_traffic_stats(uid):
 
 def start_olcrtc_container(uid):
     with lock:
+        user = users[uid]
+        node_id = user.get('node_id', 'local')
+
+        # Check if running on remote node
+        if node_id != 'local':
+            return start_remote_container(uid, node_id)
+
+        # Local container logic
         if uid in containers:
             try:
                 container = docker_client.containers.get(containers[uid])
@@ -293,7 +325,6 @@ def start_olcrtc_container(uid):
             except:
                 pass
 
-        user = users[uid]
         cmd = build_olcrtc_command(user)
 
         port_bindings = {}
@@ -343,8 +374,70 @@ def start_olcrtc_container(uid):
             print(f"Error starting container: {e}")
             return False
 
+def start_remote_container(uid, node_id):
+    """Start container on remote node"""
+    user = users[uid]
+    cmd = build_olcrtc_command(user)
+
+    port_bindings = {}
+    environment = {}
+
+    if user.get('mode') == 'cnc':
+        socks_port = user.get('socks_port', 1080)
+        port_bindings['1080/tcp'] = socks_port
+    elif user.get('mode') == 'srv':
+        socks_port = 8800 + int(uid)
+        environment['SOCKS_PORT'] = '1081'
+        environment['RX_LIMIT'] = str(user.get('rx_limit', 0))
+        environment['TX_LIMIT'] = str(user.get('tx_limit', 0))
+        port_bindings['1081/tcp'] = socks_port
+        users[uid]['socks_port'] = socks_port
+
+    try:
+        result = call_node_api(node_id, 'POST', '/containers/start', {
+            'image': 'olcrtc:latest',
+            'command': cmd,
+            'name': f'olcrtc-{uid}',
+            'ports': port_bindings,
+            'environment': environment,
+            'network_mode': 'bridge'
+        })
+
+        containers[uid] = result['container_id']
+        users[uid]['state'] = 'running'
+        users[uid]['container_id'] = result['container_id']
+        save_users()
+
+        return True
+    except Exception as e:
+        print(f"Error starting remote container: {e}")
+        return False
+
 def stop_olcrtc_container(uid):
     with lock:
+        user = users.get(uid)
+        if not user:
+            return True
+
+        node_id = user.get('node_id', 'local')
+
+        # Stop remote container
+        if node_id != 'local':
+            try:
+                container_id = user.get('container_id')
+                if container_id:
+                    call_node_api(node_id, 'POST', f'/containers/{container_id}/stop')
+            except Exception as e:
+                print(f"Error stopping remote container: {e}")
+
+            if uid in containers:
+                del containers[uid]
+            users[uid]['state'] = 'stopped'
+            users[uid]['container_id'] = None
+            save_users()
+            return True
+
+        # Stop local container
         if uid in containers:
             try:
                 container = docker_client.containers.get(containers[uid])
@@ -382,7 +475,8 @@ def status():
                 'mode': user.get('mode', 'cnc'),
                 'state': user.get('state', 'stopped'),
                 'container_id': user.get('container_id'),
-                'socks_port': user.get('socks_port', 1080)
+                'socks_port': user.get('socks_port', 1080),
+                'node_id': user.get('node_id', 'local')
             }
             user_list.append(user_data)
 
@@ -436,6 +530,7 @@ def add_user():
             'debug': data.get('debug', False),
             'profile_name': data.get('profile_name', ''),
             'dns': data.get('dns', '1.1.1.1:53'),
+            'node_id': data.get('node_id', 'local'),
             'state': 'stopped',
             'container_id': None
         }
