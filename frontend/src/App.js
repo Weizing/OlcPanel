@@ -937,12 +937,24 @@ function App() {
 
             <div className="space-y-2">
               <Label htmlFor="client_id">Client ID</Label>
-              <Input
-                id="client_id"
-                placeholder="my-client"
-                value={newUser.client_id}
-                onChange={(e) => setNewUser({ ...newUser, client_id: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="client_id"
+                  placeholder="my-client"
+                  value={newUser.client_id}
+                  onChange={(e) => setNewUser({ ...newUser, client_id: e.target.value })}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={() => {
+                    const randomId = 'client-' + Math.random().toString(36).substring(2, 10);
+                    setNewUser({ ...newUser, client_id: randomId });
+                  }}
+                  variant="outline"
+                >
+                  Генерировать
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1162,11 +1174,23 @@ function App() {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_client_id">Client ID</Label>
-                  <Input
-                    id="edit_client_id"
-                    value={editingUser.client_id}
-                    onChange={(e) => setEditingUser({ ...editingUser, client_id: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_client_id"
+                      value={editingUser.client_id}
+                      onChange={(e) => setEditingUser({ ...editingUser, client_id: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => {
+                        const randomId = 'client-' + Math.random().toString(36).substring(2, 10);
+                        setEditingUser({ ...editingUser, client_id: randomId });
+                      }}
+                      variant="outline"
+                    >
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
