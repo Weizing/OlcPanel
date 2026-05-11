@@ -253,7 +253,7 @@ function App() {
   };
 
   const deleteNode = async (nodeId) => {
-    if (!confirm('Удалить ноду?')) return;
+    if (!window.confirm('Удалить ноду?')) return;
     try {
       await axios.delete(`/api/nodes/${nodeId}`);
       fetchNodes();
