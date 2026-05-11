@@ -705,21 +705,74 @@ def add_node():
     data = request.json
     node_id = str(len(nodes) + 1)
 
+    # Generate random token if not provided
+    import secrets
+    token = data.get('token') or secrets.token_urlsafe(32)
+
     node = {
         'id': node_id,
         'name': data.get('name'),
         'host': data.get('host'),
         'port': data.get('port', 3002),
-        'token': data.get('token'),
+        'token': token,
         'status': 'unknown',
         'created_at': time.time()
     }
+
+    # Generate docker-compose.yml for the node
+    compose_content = f"""version: '3.8'
+
+services:
+  olcpanel-node:
+    build: .
+    container_name: olcpanel-node
+    restart: unless-stopped
+    ports:
+      - "{node['port']}:{node['port']}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+    environment:
+      - NODE_TOKEN={token}
+    networks:
+      - olcpanel
+
+networks:
+  olcpanel:
+    driver: bridge
+"""
+
+    node['docker_compose'] = compose_content
 
     with lock:
         nodes[node_id] = node
         save_nodes()
 
-    return jsonify({'success': True, 'node': node})
+    return jsonify({
+        'success': True,
+        'node': node,
+        'docker_compose': compose_content,
+        'instructions': f"""
+Инструкция по установке ноды:
+
+1. Создайте директорию на сервере:
+   mkdir -p /opt/olcpanel-node && cd /opt/olcpanel-node
+
+2. Скачайте файлы ноды:
+   wget https://raw.githubusercontent.com/your-repo/OlcPanel/main/node/Dockerfile
+   wget https://raw.githubusercontent.com/your-repo/OlcPanel/main/node/node_api.py
+
+3. Создайте docker-compose.yml с содержимым выше
+
+4. Запустите ноду:
+   docker compose up -d
+
+5. Проверьте статус:
+   docker compose logs -f
+
+Нода будет доступна на порту {node['port']}
+"""
+    })
 
 @app.route('/api/nodes/<node_id>', methods=['DELETE'])
 @require_auth

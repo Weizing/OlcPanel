@@ -54,6 +54,8 @@ function App() {
     port: 3002,
     token: ''
   });
+  const [nodeSetupData, setNodeSetupData] = useState(null);
+  const [showNodeSetupDialog, setShowNodeSetupDialog] = useState(false);
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -237,14 +239,16 @@ function App() {
   };
 
   const addNode = async () => {
-    if (!newNode.name || !newNode.host || !newNode.token) {
-      showNotification('Заполни все поля!', 'error');
+    if (!newNode.name || !newNode.host) {
+      showNotification('Заполни название и host!', 'error');
       return;
     }
     try {
-      await axios.post('/api/nodes', newNode);
+      const response = await axios.post('/api/nodes', newNode);
       setShowAddNodeDialog(false);
       setNewNode({ name: '', host: '', port: 3002, token: '' });
+      setNodeSetupData(response.data);
+      setShowNodeSetupDialog(true);
       fetchNodes();
       showNotification('Нода добавлена');
     } catch (err) {
@@ -1523,6 +1527,71 @@ function App() {
             </div>
             <Button onClick={addNode} className="w-full">
               Добавить ноду
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNodeSetupDialog} onOpenChange={setShowNodeSetupDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Настройка ноды</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold mb-2">Инструкции по установке:</h3>
+              <ol className="list-decimal list-inside space-y-1 text-sm">
+                <li>Скопируйте docker-compose.yml на сервер ноды</li>
+                <li>Скопируйте папку node/ из репозитория на сервер</li>
+                <li>Запустите: docker compose up -d</li>
+                <li>Нода автоматически подключится к панели</li>
+              </ol>
+            </div>
+
+            {nodeSetupData && (
+              <>
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold">docker-compose.yml:</h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(nodeSetupData.docker_compose);
+                      }}
+                    >
+                      Копировать
+                    </Button>
+                  </div>
+                  <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto">
+                    {nodeSetupData.docker_compose}
+                  </pre>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold mb-2">Токен ноды:</h3>
+                  <div className="flex gap-2">
+                    <Input
+                      value={nodeSetupData.node.token}
+                      readOnly
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(nodeSetupData.node.token);
+                      }}
+                    >
+                      Копировать
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <Button onClick={() => setShowNodeSetupDialog(false)} className="w-full">
+              Закрыть
             </Button>
           </div>
         </DialogContent>
