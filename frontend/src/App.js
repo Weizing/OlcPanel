@@ -1543,32 +1543,14 @@ function App() {
               <h3 className="font-semibold mb-2">Инструкции по установке:</h3>
               <ol className="list-decimal list-inside space-y-1 text-sm">
                 <li>Создайте директорию на сервере: mkdir -p /opt/olcpanel-node && cd /opt/olcpanel-node</li>
-                <li>Создайте файл node_api.py с содержимым ниже</li>
                 <li>Создайте файл docker-compose.yml с содержимым ниже</li>
                 <li>Запустите: docker compose up -d</li>
+                <li>Проверьте статус: docker compose logs -f</li>
               </ol>
             </div>
 
             {nodeSetupData && (
               <>
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-semibold">node_api.py:</h3>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        navigator.clipboard.writeText(nodeSetupData.node_api);
-                      }}
-                    >
-                      Копировать
-                    </Button>
-                  </div>
-                  <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto max-h-60">
-                    {nodeSetupData.node_api}
-                  </pre>
-                </div>
-
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="font-semibold">docker-compose.yml:</h3>
@@ -1582,7 +1564,7 @@ function App() {
                       Копировать
                     </Button>
                   </div>
-                  <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto">
+                  <pre className="bg-gray-900 text-gray-100 p-3 rounded text-xs overflow-x-auto max-h-96">
                     {nodeSetupData.docker_compose}
                   </pre>
                 </div>
