@@ -1503,14 +1503,28 @@ function App() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="node_token">Token</Label>
-              <Input
-                id="node_token"
-                type="password"
-                placeholder="Токен аутентификации ноды"
-                value={newNode.token}
-                onChange={(e) => setNewNode({ ...newNode, token: e.target.value })}
-              />
+              <Label htmlFor="node_token">Token (оставьте пустым для автогенерации)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="node_token"
+                  type="password"
+                  placeholder="Токен аутентификации ноды"
+                  value={newNode.token}
+                  onChange={(e) => setNewNode({ ...newNode, token: e.target.value })}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={() => {
+                    const randomToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                      .map(b => b.toString(16).padStart(2, '0'))
+                      .join('');
+                    setNewNode({ ...newNode, token: randomToken });
+                  }}
+                  variant="outline"
+                >
+                  Генерировать
+                </Button>
+              </div>
             </div>
             <Button onClick={addNode} className="w-full">
               Добавить ноду
