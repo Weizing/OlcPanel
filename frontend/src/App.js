@@ -178,6 +178,16 @@ function App() {
       const response = await axios.get('/api/status');
       setUsers(response.data.users);
       setServerStats(response.data.server);
+
+      // Initialize collapsed groups - all collapsed by default
+      const initialCollapsed = {};
+      response.data.users.forEach(user => {
+        const clientId = user.client_id || 'unknown';
+        if (!(clientId in initialCollapsed)) {
+          initialCollapsed[clientId] = true;
+        }
+      });
+      setCollapsedGroups(prev => ({ ...initialCollapsed, ...prev }));
     } catch (err) {
       if (err.response?.status === 401) handleLogout();
     }
