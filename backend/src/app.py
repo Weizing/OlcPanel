@@ -133,6 +133,33 @@ def save_nodes():
     with open(NODES_FILE, 'w') as f:
         json.dump(nodes, f, indent=2)
 
+def check_node_status(node_id):
+    """Check if a node is online"""
+    try:
+        node = nodes.get(node_id)
+        if not node:
+            return False
+
+        url = f"http://{node['host']}:{node['port']}/health"
+        response = requests.get(url, timeout=5)
+        return response.status_code == 200
+    except:
+        return False
+
+def monitor_nodes():
+    """Background thread to monitor node health"""
+    while True:
+        try:
+            with lock:
+                for node_id in list(nodes.keys()):
+                    is_online = check_node_status(node_id)
+                    nodes[node_id]['status'] = 'online' if is_online else 'offline'
+                save_nodes()
+        except Exception as e:
+            print(f"Error monitoring nodes: {e}")
+
+        time.sleep(10)  # Check every 10 seconds
+
 def call_node_api(node_id, method, endpoint, data=None):
     """Call remote node API"""
     if node_id not in nodes:
@@ -1010,4 +1037,9 @@ def check_node_health(node_id):
 if __name__ == '__main__':
     load_users()
     load_nodes()
+
+    # Start node monitoring thread
+    monitor_thread = threading.Thread(target=monitor_nodes, daemon=True)
+    monitor_thread.start()
+
     app.run(host='0.0.0.0', port=3001, debug=False)
