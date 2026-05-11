@@ -1204,6 +1204,7 @@ function App() {
                 <div className="space-y-2">
                   {generatedRooms.map((roomId, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-2 bg-muted rounded">
+                      <span className="text-sm text-muted-foreground font-semibold min-w-[2rem]">#{idx + 1}</span>
                       <span className="flex-1 font-mono text-sm truncate">{roomId}</span>
                       <Button
                         size="sm"
