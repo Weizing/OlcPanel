@@ -31,6 +31,7 @@ users = {}
 containers = {}
 logs = {}
 traffic_stats = {}
+memory_stats = {}
 nodes = {}
 lock = threading.RLock()
 
@@ -329,6 +330,26 @@ def read_traffic_stats(uid):
         if uid in traffic_stats:
             del traffic_stats[uid]
 
+def monitor_memory():
+    """Background thread to monitor container memory usage"""
+    while True:
+        try:
+            with lock:
+                for uid in list(containers.keys()):
+                    try:
+                        container = docker_client.containers.get(containers[uid])
+                        if container.status == 'running':
+                            stats = container.stats(stream=False)
+                            memory_usage = stats['memory_stats'].get('usage', 0)
+                            memory_stats[uid] = round(memory_usage / (1024 * 1024), 1)
+                    except:
+                        if uid in memory_stats:
+                            del memory_stats[uid]
+        except Exception as e:
+            print(f"Error monitoring memory: {e}")
+
+        time.sleep(5)  # Update every 5 seconds
+
 def start_olcrtc_container(uid):
     with lock:
         user = users[uid]
@@ -504,21 +525,8 @@ def status():
                 'container_id': user.get('container_id'),
                 'socks_port': user.get('socks_port', 1080),
                 'node_id': user.get('node_id', 'local'),
-                'memory_mb': 0
+                'memory_mb': memory_stats.get(uid, 0)
             }
-
-            # Get memory usage for running containers
-            if user.get('state') == 'running' and user.get('node_id') == 'local':
-                try:
-                    container_id = user.get('container_id')
-                    if container_id and container_id in containers.values():
-                        container = docker_client.containers.get(container_id)
-                        stats = container.stats(stream=False)
-                        memory_usage = stats['memory_stats'].get('usage', 0)
-                        user_data['memory_mb'] = round(memory_usage / (1024 * 1024), 1)
-                except:
-                    pass
-
             user_list.append(user_data)
 
         return jsonify({
@@ -1065,5 +1073,9 @@ if __name__ == '__main__':
     # Start node monitoring thread
     monitor_thread = threading.Thread(target=monitor_nodes, daemon=True)
     monitor_thread.start()
+
+    # Start memory monitoring thread
+    memory_thread = threading.Thread(target=monitor_memory, daemon=True)
+    memory_thread.start()
 
     app.run(host='0.0.0.0', port=3001, debug=False)
