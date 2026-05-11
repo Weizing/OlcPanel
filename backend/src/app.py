@@ -564,10 +564,11 @@ def generate_room_ids():
                 '-dns', dns,
                 '-amount', str(amount)
             ],
+            environment={},  # No SOCKS proxy for generation mode
             remove=True,
             detach=False,
             stdout=True,
-            stderr=True
+            stderr=False  # Ignore stderr to avoid debug messages
         )
 
         output = container.decode('utf-8', errors='ignore')
@@ -606,6 +607,75 @@ def get_traffic(uid):
         if uid in traffic_stats:
             return jsonify(traffic_stats[uid])
         return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
+
+@app.route('/api/subscription/<client_id>', methods=['GET'])
+def get_subscription(client_id):
+    """Generate subscription file for specific client_id"""
+    with lock:
+        # Find all running instances with this client_id
+        instances = []
+        for uid, user in users.items():
+            if user.get('state') != 'running':
+                continue
+            if user.get('client_id') != client_id:
+                continue
+
+            # Build URI
+            params_str = ''
+            if user.get('transport_params'):
+                params_list = [f"{k}={v}" for k, v in user['transport_params'].items() if v]
+                if params_list:
+                    params_str = '<' + '&'.join(params_list) + '>'
+
+            uri = f"olcrtc://{user['carrier']}?{user['transport']}{params_str}@{user['room_id']}#{user['key']}%{client_id}"
+            if user.get('profile_name'):
+                uri += f"${user['profile_name']}"
+
+            # Get traffic stats
+            traffic = traffic_stats.get(uid, {})
+            used_mb = traffic.get('total_mb', 0)
+
+            instances.append({
+                'uri': uri,
+                'name': user.get('profile_name') or f"Instance {uid}",
+                'used': f"{used_mb}mb",
+                'mode': user.get('mode', 'srv'),
+                'transport': user.get('transport', 'datachannel'),
+                'carrier': user.get('carrier', 'wbstream')
+            })
+
+        if not instances:
+            return Response("# No running instances found for this client_id\n", mimetype='text/plain')
+
+        # Build subscription file content
+        lines = []
+        lines.append(f"#name: {client_id}")
+        lines.append(f"#update: {int(time.time())}")
+        lines.append(f"#refresh: 5m")
+        lines.append(f"#color: #22c55e")
+        lines.append("")
+
+        for instance in instances:
+            lines.append(instance['uri'])
+            lines.append(f"##name: {instance['name']}")
+            lines.append(f"##used: {instance['used']}")
+            lines.append(f"##comment: {instance['mode']} mode, {instance['transport']} transport, {instance['carrier']} carrier")
+            lines.append("")
+
+        content = '\n'.join(lines)
+        return Response(content, mimetype='text/plain')
+
+@app.route('/api/subscription/list', methods=['GET'])
+@require_auth
+def list_subscriptions():
+    """List all available client_ids with running instances"""
+    with lock:
+        client_ids = set()
+        for user in users.values():
+            if user.get('state') == 'running' and user.get('client_id'):
+                client_ids.add(user['client_id'])
+
+        return jsonify({'client_ids': sorted(list(client_ids))})
 
 if __name__ == '__main__':
     load_users()

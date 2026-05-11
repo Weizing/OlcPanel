@@ -42,6 +42,9 @@ function App() {
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [qrCodeData, setQrCodeData] = useState(null);
   const [trafficStats, setTrafficStats] = useState({});
+  const [showSubscriptionDialog, setShowSubscriptionDialog] = useState(false);
+  const [subscriptionUrls, setSubscriptionUrls] = useState([]);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const [genConfig, setGenConfig] = useState({
     carrier: 'wbstream',
     amount: 1,
@@ -175,6 +178,16 @@ function App() {
       const response = await axios.get('/api/status');
       setUsers(response.data.users);
       setServerStats(response.data.server);
+
+      // Initialize collapsed groups - all collapsed by default
+      const initialCollapsed = {};
+      response.data.users.forEach(user => {
+        const clientId = user.client_id || 'unknown';
+        if (!(clientId in initialCollapsed)) {
+          initialCollapsed[clientId] = true;
+        }
+      });
+      setCollapsedGroups(prev => ({ ...initialCollapsed, ...prev }));
     } catch (err) {
       if (err.response?.status === 401) handleLogout();
     }
@@ -521,99 +534,172 @@ function App() {
                 Генератор
               </Button>
             </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  try {
+                    const response = await axios.get('/api/subscription/list');
+                    const clientIds = response.data.client_ids;
+                    if (clientIds.length === 0) {
+                      showNotification('Нет запущенных инстансов', 'error');
+                      return;
+                    }
+                    const urls = clientIds.map(id => ({
+                      clientId: id,
+                      url: `${window.location.origin}/api/subscription/${id}`
+                    }));
+                    setSubscriptionUrls(urls);
+                    setShowSubscriptionDialog(true);
+                  } catch (err) {
+                    showNotification('Ошибка получения subscription URLs', 'error');
+                  }
+                }}
+                variant="secondary"
+                className="flex-1"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Subscription URL
+              </Button>
+            </div>
 
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Инстансы ({users.length})</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2 max-h-[calc(100vh-20rem)] overflow-y-auto">
                 {users.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     Нет инстансов
                   </p>
                 ) : (
-                  users.map(user => (
-                    <Card
-                      key={user.id}
-                      className={`cursor-pointer transition-colors ${
-                        selectedUser === user.id ? 'border-primary' : ''
-                      }`}
-                      onClick={() => selectUser(user.id)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <span className="font-mono text-sm">#{user.id}</span>
-                          <Badge variant={user.state === 'running' ? 'success' : 'secondary'}>
-                            {user.state === 'running' ? 'Running' : 'Stopped'}
-                          </Badge>
+                  (() => {
+                    // Group users by client_id
+                    const grouped = users.reduce((acc, user) => {
+                      const clientId = user.client_id || 'unknown';
+                      if (!acc[clientId]) acc[clientId] = [];
+                      acc[clientId].push(user);
+                      return acc;
+                    }, {});
+
+                    return Object.entries(grouped).map(([clientId, groupUsers]) => (
+                      <div key={clientId} className="space-y-2">
+                        {/* Group Header */}
+                        <div
+                          className="flex items-center justify-between p-2 bg-muted rounded hover:bg-muted/80"
+                        >
+                          <div
+                            className="flex items-center gap-2 flex-1 cursor-pointer"
+                            onClick={() => setCollapsedGroups(prev => ({
+                              ...prev,
+                              [clientId]: !prev[clientId]
+                            }))}
+                          >
+                            <span className="text-sm font-semibold">{clientId}</span>
+                            <Badge variant="outline">{groupUsers.length}</Badge>
+                            <span className="text-xs ml-auto">
+                              {collapsedGroups[clientId] ? '▶' : '▼'}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const url = `${window.location.origin}/api/subscription/${clientId}`;
+                              navigator.clipboard.writeText(url);
+                              showNotification(`Subscription URL для ${clientId} скопирован`);
+                            }}
+                            className="ml-2"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
                         </div>
-                        <div className="space-y-1 text-sm mb-3">
-                          <div><span className="text-muted-foreground">Client:</span> {user.client_id}</div>
-                          <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
-                          <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
-                          {user.mode === 'cnc' && (
-                            <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
-                          )}
-                          {user.mode === 'srv' && user.socks_port && (
-                            <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
-                          )}
-                          {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
-                            <>
-                              <div className="text-xs text-primary">
-                                <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+
+                        {/* Group Items */}
+                        {!collapsedGroups[clientId] && groupUsers.map(user => (
+                          <Card
+                            key={user.id}
+                            className={`cursor-pointer transition-colors ml-4 ${
+                              selectedUser === user.id ? 'border-primary' : ''
+                            }`}
+                            onClick={() => selectUser(user.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <span className="font-mono text-sm">#{user.id}</span>
+                                <Badge variant={user.state === 'running' ? 'success' : 'secondary'}>
+                                  {user.state === 'running' ? 'Running' : 'Stopped'}
+                                </Badge>
                               </div>
-                              <div className="text-xs text-green-500">
-                                <span className="text-muted-foreground">Speed:</span> ↓{trafficStats[user.id].rx_speed} KB/s / ↑{trafficStats[user.id].tx_speed} KB/s
+                              <div className="space-y-1 text-sm mb-3">
+                                <div><span className="text-muted-foreground">Carrier:</span> {user.carrier}</div>
+                                <div><span className="text-muted-foreground">Transport:</span> {user.transport}</div>
+                                {user.mode === 'cnc' && (
+                                  <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                                )}
+                                {user.mode === 'srv' && user.socks_port && (
+                                  <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
+                                )}
+                                {user.state === 'running' && user.mode === 'srv' && trafficStats[user.id] && (
+                                  <>
+                                    <div className="text-xs text-primary">
+                                      <span className="text-muted-foreground">Traffic:</span> ↓{trafficStats[user.id].rx_mb} MB / ↑{trafficStats[user.id].tx_mb} MB
+                                    </div>
+                                    <div className="text-xs text-green-500">
+                                      <span className="text-muted-foreground">Speed:</span> ↓{trafficStats[user.id].rx_speed} KB/s / ↑{trafficStats[user.id].tx_speed} KB/s
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                            </>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          {user.state === 'running' ? (
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={(e) => { e.stopPropagation(); stopUser(user.id); }}
-                              className="flex-1"
-                            >
-                              <Square className="h-3 w-3 mr-1" />
-                              Stop
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={(e) => { e.stopPropagation(); startUser(user.id); }}
-                              className="flex-1"
-                            >
-                              <Play className="h-3 w-3 mr-1" />
-                              Start
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); editUser(user); }}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); generateQrCode(user.id); }}
-                          >
-                            <QrCodeIcon className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); deleteUser(user.id); }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                              <div className="flex gap-1">
+                                {user.state === 'running' ? (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={(e) => { e.stopPropagation(); stopUser(user.id); }}
+                                    className="flex-1"
+                                  >
+                                    <Square className="h-3 w-3 mr-1" />
+                                    Stop
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); startUser(user.id); }}
+                                    className="flex-1"
+                                  >
+                                    <Play className="h-3 w-3 mr-1" />
+                                    Start
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); editUser(user); }}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); generateQrCode(user.id); }}
+                                >
+                                  <QrCodeIcon className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => { e.stopPropagation(); deleteUser(user.id); }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ));
+                  })()
                 )}
               </CardContent>
             </Card>
@@ -1118,6 +1204,7 @@ function App() {
                 <div className="space-y-2">
                   {generatedRooms.map((roomId, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-2 bg-muted rounded">
+                      <span className="text-sm text-muted-foreground font-semibold min-w-[2rem]">#{idx + 1}</span>
                       <span className="flex-1 font-mono text-sm truncate">{roomId}</span>
                       <Button
                         size="sm"
@@ -1188,6 +1275,41 @@ function App() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription URLs Dialog */}
+      <Dialog open={showSubscriptionDialog} onOpenChange={setShowSubscriptionDialog}>
+        <DialogContent onClose={() => setShowSubscriptionDialog(false)} className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Subscription URLs</DialogTitle>
+            <DialogDescription>
+              Ссылки на subscription файлы для каждого Client ID
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {subscriptionUrls.map((item, index) => (
+              <div key={index} className="space-y-2">
+                <Label>Client ID: {item.clientId}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={item.url}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    onClick={() => {
+                      navigator.clipboard.writeText(item.url);
+                      showNotification(`URL для ${item.clientId} скопирован`);
+                    }}
+                    variant="outline"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
