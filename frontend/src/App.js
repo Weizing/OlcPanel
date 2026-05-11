@@ -1145,6 +1145,22 @@ function App() {
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
+                  <Label htmlFor="edit_node_id">Нода</Label>
+                  <Select
+                    id="edit_node_id"
+                    value={editingUser.node_id || 'local'}
+                    onChange={(e) => setEditingUser({ ...editingUser, node_id: e.target.value })}
+                  >
+                    <option value="local">Локальная (этот сервер)</option>
+                    {nodes.filter(n => n.status === 'online').map(node => (
+                      <option key={node.id} value={node.id}>
+                        {node.name} ({node.host}:{node.port})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="edit_client_id">Client ID</Label>
                   <Input
                     id="edit_client_id"
@@ -1155,12 +1171,26 @@ function App() {
 
                 <div className="space-y-2">
                   <Label htmlFor="edit_key">Encryption Key (оставь пустым чтобы не менять)</Label>
-                  <Input
-                    id="edit_key"
-                    placeholder="Не изменять"
-                    value={editingUser.key}
-                    onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="edit_key"
+                      placeholder="Не изменять"
+                      value={editingUser.key}
+                      onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={() => {
+                        const key = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                          .map(b => b.toString(16).padStart(2, '0'))
+                          .join('');
+                        setEditingUser({ ...editingUser, key });
+                      }}
+                      variant="outline"
+                    >
+                      Генерировать
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
