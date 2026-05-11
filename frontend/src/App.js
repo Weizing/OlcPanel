@@ -812,58 +812,87 @@ function App() {
         )}
 
         {activeTab === 'nodes' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Управление нодами</h2>
-            <Button onClick={() => setShowAddNodeDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Добавить ноду
-            </Button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left panel - Nodes */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="flex justify-end">
+              <Button onClick={() => setShowAddNodeDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Добавить ноду
+              </Button>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Ноды ({nodes.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 max-h-[calc(100vh-20rem)] overflow-y-auto">
+                {nodes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    Нет нод
+                  </p>
+                ) : (
+                  nodes.map(node => (
+                    <Card
+                      key={node.id}
+                      className="cursor-pointer transition-colors hover:border-primary"
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <span className="font-semibold">{node.name}</span>
+                          <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
+                            {node.status || 'unknown'}
+                          </Badge>
+                        </div>
+                        <div className="space-y-1 text-sm mb-3">
+                          <div><span className="text-muted-foreground">Host:</span> {node.host}</div>
+                          <div><span className="text-muted-foreground">Port:</span> {node.port}</div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              const status = await checkNodeHealth(node.id);
+                              showNotification(`Нода ${node.name}: ${status}`);
+                            }}
+                            className="flex-1"
+                          >
+                            Проверить
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteNode(node.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {nodes.map(node => (
-              <Card key={node.id}>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>{node.name}</span>
-                    <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
-                      {node.status || 'unknown'}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Host:</span> {node.host}:{node.port}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        const status = await checkNodeHealth(node.id);
-                        showNotification(`Нода ${node.name}: ${status}`);
-                      }}
-                      className="flex-1"
-                    >
-                      Проверить
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => deleteNode(node.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-            {nodes.length === 0 && (
-              <div className="col-span-full text-center py-12 text-muted-foreground">
-                Нет добавленных нод
-              </div>
-            )}
+          {/* Right panel - Node details/stats */}
+          <div className="lg:col-span-2">
+            <Card className="h-[calc(100vh-12rem)]">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Server className="h-5 w-5" />
+                  Информация о нодах
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center h-[calc(100vh-18rem)] text-muted-foreground">
+                  <Server className="h-12 w-12 mb-4" />
+                  <p>Выберите ноду для просмотра деталей</p>
+                  <p className="text-sm mt-2">Здесь будет отображаться статистика и список контейнеров</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
         )}
