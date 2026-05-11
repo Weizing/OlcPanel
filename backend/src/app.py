@@ -19,6 +19,7 @@ CORS(app)
 DATA_DIR = '/app/data'
 USERS_FILE = os.path.join(DATA_DIR, 'users.json')
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
+NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -29,6 +30,7 @@ users = {}
 containers = {}
 logs = {}
 traffic_stats = {}
+nodes = {}
 lock = threading.RLock()
 
 CARRIERS = ['wbstream', 'jazz', 'telemost']
@@ -117,6 +119,18 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=2)
+
+def load_nodes():
+    global nodes
+    if os.path.exists(NODES_FILE):
+        with open(NODES_FILE, 'r') as f:
+            nodes = json.load(f)
+    else:
+        nodes = {}
+
+def save_nodes():
+    with open(NODES_FILE, 'w') as f:
+        json.dump(nodes, f, indent=2)
 
 def require_auth(f):
     @wraps(f)
@@ -677,6 +691,66 @@ def list_subscriptions():
 
         return jsonify({'client_ids': sorted(list(client_ids))})
 
+@app.route('/api/nodes', methods=['GET'])
+@require_auth
+def get_nodes():
+    """Get all nodes"""
+    with lock:
+        return jsonify({'nodes': list(nodes.values())})
+
+@app.route('/api/nodes', methods=['POST'])
+@require_auth
+def add_node():
+    """Add a new node"""
+    data = request.json
+    node_id = str(len(nodes) + 1)
+
+    node = {
+        'id': node_id,
+        'name': data.get('name'),
+        'host': data.get('host'),
+        'port': data.get('port', 3002),
+        'token': data.get('token'),
+        'status': 'unknown',
+        'created_at': time.time()
+    }
+
+    with lock:
+        nodes[node_id] = node
+        save_nodes()
+
+    return jsonify({'success': True, 'node': node})
+
+@app.route('/api/nodes/<node_id>', methods=['DELETE'])
+@require_auth
+def delete_node(node_id):
+    """Delete a node"""
+    with lock:
+        if node_id in nodes:
+            del nodes[node_id]
+            save_nodes()
+            return jsonify({'success': True})
+        return jsonify({'error': 'Node not found'}), 404
+
+@app.route('/api/nodes/<node_id>/health', methods=['GET'])
+@require_auth
+def check_node_health(node_id):
+    """Check node health"""
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+
+    node = nodes[node_id]
+    try:
+        import requests
+        response = requests.get(
+            f"http://{node['host']}:{node['port']}/health",
+            timeout=5
+        )
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'offline'}), 500
+
 if __name__ == '__main__':
     load_users()
+    load_nodes()
     app.run(host='0.0.0.0', port=3001, debug=False)
