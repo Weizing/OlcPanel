@@ -48,6 +48,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('instances'); // 'instances' or 'nodes'
   const [nodes, setNodes] = useState([]);
   const [showAddNodeDialog, setShowAddNodeDialog] = useState(false);
+  const [selectedNode, setSelectedNode] = useState(null);
   const [newNode, setNewNode] = useState({
     name: '',
     host: '',
@@ -817,88 +818,57 @@ function App() {
         )}
 
         {activeTab === 'nodes' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left panel - Nodes */}
-          <div className="lg:col-span-1 space-y-4">
-            <div className="flex justify-end">
-              <Button onClick={() => setShowAddNodeDialog(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Добавить ноду
-              </Button>
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Ноды ({nodes.length})</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 max-h-[calc(100vh-20rem)] overflow-y-auto">
-                {nodes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Нет нод
-                  </p>
-                ) : (
-                  nodes.map(node => (
-                    <Card
-                      key={node.id}
-                      className="cursor-pointer transition-colors hover:border-primary"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <span className="font-semibold">{node.name}</span>
-                          <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
-                            {node.status || 'unknown'}
-                          </Badge>
-                        </div>
-                        <div className="space-y-1 text-sm mb-3">
-                          <div><span className="text-muted-foreground">Host:</span> {node.host}</div>
-                          <div><span className="text-muted-foreground">Port:</span> {node.port}</div>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              const status = await checkNodeHealth(node.id);
-                              showNotification(`Нода ${node.name}: ${status}`);
-                            }}
-                            className="flex-1"
-                          >
-                            Проверить
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => deleteNode(node.id)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={() => setShowAddNodeDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Добавить ноду
+            </Button>
           </div>
 
-          {/* Right panel - Node details/stats */}
-          <div className="lg:col-span-2">
-            <Card className="h-[calc(100vh-12rem)]">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Server className="h-5 w-5" />
-                  Информация о нодах
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center justify-center h-[calc(100vh-18rem)] text-muted-foreground">
+          {nodes.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center text-muted-foreground">
                   <Server className="h-12 w-12 mb-4" />
-                  <p>Выберите ноду для просмотра деталей</p>
-                  <p className="text-sm mt-2">Здесь будет отображаться статистика и список контейнеров</p>
+                  <p>Нет нод</p>
+                  <p className="text-sm mt-2">Добавьте ноду для распределённого управления</p>
                 </div>
               </CardContent>
             </Card>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {nodes.map(node => (
+                <Card
+                  key={node.id}
+                  className="cursor-pointer transition-all hover:shadow-lg hover:border-primary"
+                  onClick={() => setSelectedNode(node)}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Server className="h-5 w-5 text-primary" />
+                        <span className="font-semibold text-lg">{node.name}</span>
+                      </div>
+                      <Badge variant={node.status === 'online' ? 'success' : 'secondary'}>
+                        {node.status || 'unknown'}
+                      </Badge>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Host:</span>
+                        <span className="font-mono">{node.host}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Port:</span>
+                        <span className="font-mono">{node.port}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
         )}
       </div>
@@ -1629,6 +1599,102 @@ function App() {
               Закрыть
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Node Details Dialog */}
+      <Dialog open={selectedNode !== null} onOpenChange={() => setSelectedNode(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {selectedNode && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Server className="h-5 w-5" />
+                  {selectedNode.name}
+                  <Badge variant={selectedNode.status === 'online' ? 'success' : 'secondary'}>
+                    {selectedNode.status || 'unknown'}
+                  </Badge>
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6 mt-4">
+                {/* Node Info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Host</Label>
+                    <div className="font-mono text-sm mt-1">{selectedNode.host}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Port</Label>
+                    <div className="font-mono text-sm mt-1">{selectedNode.port}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Status</Label>
+                    <div className="text-sm mt-1">{selectedNode.status || 'unknown'}</div>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Created</Label>
+                    <div className="text-sm mt-1">
+                      {selectedNode.created_at ? new Date(selectedNode.created_at * 1000).toLocaleString() : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const status = await checkNodeHealth(selectedNode.id);
+                      showNotification(`Нода ${selectedNode.name}: ${status}`);
+                    }}
+                    className="flex-1"
+                  >
+                    Проверить подключение
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      if (window.confirm(`Удалить ноду ${selectedNode.name}?`)) {
+                        deleteNode(selectedNode.id);
+                        setSelectedNode(null);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Удалить ноду
+                  </Button>
+                </div>
+
+                {/* Running Instances */}
+                <div>
+                  <h3 className="font-semibold mb-3">Запущенные инстансы на этой ноде</h3>
+                  <div className="space-y-2">
+                    {users.filter(u => u.node_id === selectedNode.id && u.state === 'running').length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Нет запущенных инстансов
+                      </p>
+                    ) : (
+                      users.filter(u => u.node_id === selectedNode.id && u.state === 'running').map(user => (
+                        <Card key={user.id}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-mono text-sm">#{user.id} - {user.client_id}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {user.carrier} / {user.transport} / {user.mode}
+                                </div>
+                              </div>
+                              <Badge variant="success">Running</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
