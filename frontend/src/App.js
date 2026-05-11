@@ -720,7 +720,7 @@ function App() {
                                 {user.mode === 'srv' && user.socks_port && (
                                   <div><span className="text-muted-foreground">SOCKS:</span> :{user.socks_port}</div>
                                 )}
-                                {user.state === 'running' && user.memory_mb > 0 && (
+                                {user.state === 'running' && user.memory_mb && user.memory_mb > 0 && (
                                   <div className="text-xs text-blue-500">
                                     <span className="text-muted-foreground">Memory:</span> {user.memory_mb} MB
                                   </div>
