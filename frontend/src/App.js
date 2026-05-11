@@ -575,19 +575,34 @@ function App() {
                       <div key={clientId} className="space-y-2">
                         {/* Group Header */}
                         <div
-                          className="flex items-center justify-between p-2 bg-muted rounded cursor-pointer hover:bg-muted/80"
-                          onClick={() => setCollapsedGroups(prev => ({
-                            ...prev,
-                            [clientId]: !prev[clientId]
-                          }))}
+                          className="flex items-center justify-between p-2 bg-muted rounded hover:bg-muted/80"
                         >
-                          <div className="flex items-center gap-2">
+                          <div
+                            className="flex items-center gap-2 flex-1 cursor-pointer"
+                            onClick={() => setCollapsedGroups(prev => ({
+                              ...prev,
+                              [clientId]: !prev[clientId]
+                            }))}
+                          >
                             <span className="text-sm font-semibold">{clientId}</span>
                             <Badge variant="outline">{groupUsers.length}</Badge>
+                            <span className="text-xs ml-auto">
+                              {collapsedGroups[clientId] ? '▶' : '▼'}
+                            </span>
                           </div>
-                          <span className="text-xs">
-                            {collapsedGroups[clientId] ? '▶' : '▼'}
-                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const url = `${window.location.origin}/api/subscription/${clientId}`;
+                              navigator.clipboard.writeText(url);
+                              showNotification(`Subscription URL для ${clientId} скопирован`);
+                            }}
+                            className="ml-2"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
                         </div>
 
                         {/* Group Items */}
