@@ -568,7 +568,7 @@ def generate_room_ids():
             remove=True,
             detach=False,
             stdout=True,
-            stderr=True
+            stderr=False  # Ignore stderr to avoid debug messages
         )
 
         output = container.decode('utf-8', errors='ignore')
