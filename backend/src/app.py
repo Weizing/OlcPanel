@@ -503,8 +503,22 @@ def status():
                 'state': user.get('state', 'stopped'),
                 'container_id': user.get('container_id'),
                 'socks_port': user.get('socks_port', 1080),
-                'node_id': user.get('node_id', 'local')
+                'node_id': user.get('node_id', 'local'),
+                'memory_mb': 0
             }
+
+            # Get memory usage for running containers
+            if user.get('state') == 'running' and user.get('node_id') == 'local':
+                try:
+                    container_id = user.get('container_id')
+                    if container_id and container_id in containers.values():
+                        container = docker_client.containers.get(container_id)
+                        stats = container.stats(stream=False)
+                        memory_usage = stats['memory_stats'].get('usage', 0)
+                        user_data['memory_mb'] = round(memory_usage / (1024 * 1024), 1)
+                except:
+                    pass
+
             user_list.append(user_data)
 
         return jsonify({
