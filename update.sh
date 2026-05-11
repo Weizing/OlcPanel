@@ -18,7 +18,7 @@ docker compose build --no-cache
 # Restart services
 echo ""
 echo "Restarting services..."
-docker compose restart backend frontend
+docker compose up -d backend frontend
 
 echo ""
 echo "=== Update complete ==="
