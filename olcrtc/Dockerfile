@@ -1,12 +1,12 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
 
 RUN apk add --no-cache git
 
-RUN git clone --recurse-submodules https://github.com/openlibrecommunity/olcrtc.git .
+RUN git clone --depth 1 --recurse-submodules https://github.com/openlibrecommunity/olcrtc.git .
 
-RUN go build -o olcrtc ./cmd/olcrtc
+RUN go mod download && go build -o olcrtc ./cmd/olcrtc
 
 # Build SOCKS5 proxy
 WORKDIR /socks5proxy
