@@ -1116,17 +1116,15 @@ function App() {
                 </Select>
               </div>
 
-              {newUser.mode === 'cnc' && (
-                <div className="space-y-2">
-                  <Label htmlFor="socks_port">SOCKS5 Port</Label>
-                  <Input
-                    id="socks_port"
-                    type="number"
-                    value={newUser.socks_port}
-                    onChange={(e) => setNewUser({ ...newUser, socks_port: parseInt(e.target.value) })}
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="socks_port">SOCKS5 Port</Label>
+                <Input
+                  id="socks_port"
+                  type="number"
+                  value={newUser.socks_port}
+                  onChange={(e) => setNewUser({ ...newUser, socks_port: parseInt(e.target.value) })}
+                />
+              </div>
             </div>
 
             {newUser.mode === 'srv' && (
@@ -1343,17 +1341,15 @@ function App() {
                     </Select>
                   </div>
 
-                  {editingUser.mode === 'cnc' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="edit_socks_port">SOCKS5 Port</Label>
-                      <Input
-                        id="edit_socks_port"
-                        type="number"
-                        value={editingUser.socks_port}
-                        onChange={(e) => setEditingUser({ ...editingUser, socks_port: parseInt(e.target.value) })}
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_socks_port">SOCKS5 Port</Label>
+                    <Input
+                      id="edit_socks_port"
+                      type="number"
+                      value={editingUser.socks_port}
+                      onChange={(e) => setEditingUser({ ...editingUser, socks_port: parseInt(e.target.value) })}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
