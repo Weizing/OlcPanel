@@ -663,6 +663,24 @@ def stop_user(uid):
 @require_auth
 def get_logs(uid):
     with lock:
+        user = users.get(uid)
+        if not user:
+            return jsonify({'logs': []})
+
+        node_id = user.get('node_id', 'local')
+
+        # Get logs from remote node
+        if node_id != 'local':
+            try:
+                container_id = user.get('container_id')
+                if container_id:
+                    result = call_node_api(node_id, 'GET', f'/containers/{container_id}/logs')
+                    return jsonify({'logs': result.get('logs', [])})
+            except Exception as e:
+                print(f"Error getting remote logs: {e}")
+                return jsonify({'logs': [f"Error: {str(e)}"]})
+
+        # Get local logs
         if uid in logs:
             return jsonify({'logs': list(logs[uid])})
         return jsonify({'logs': []})
@@ -740,6 +758,11 @@ def generate_uri(uid):
 @require_auth
 def get_traffic(uid):
     with lock:
+        user = users.get(uid)
+        if user and user.get('node_id') != 'local':
+            # Remote nodes don't support traffic monitoring yet
+            return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
+
         if uid in traffic_stats:
             return jsonify(traffic_stats[uid])
         return jsonify({'rx_bytes': 0, 'tx_bytes': 0, 'rx_mb': 0, 'tx_mb': 0, 'total_mb': 0, 'rx_speed': 0, 'tx_speed': 0})
