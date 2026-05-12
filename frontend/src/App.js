@@ -430,8 +430,8 @@ function App() {
       setEditingUser({
         id: user.id,
         client_id: userData.client_id || '',
-        key: '',
-        room_id: '',
+        key: userData.key || '',
+        room_id: userData.room_id || '',
         carrier: userData.carrier || 'wbstream',
         transport: userData.transport || 'datachannel',
         mode: userData.mode || 'srv',
@@ -439,7 +439,10 @@ function App() {
         transport_params: userData.transport_params || {},
         debug: userData.debug || false,
         profile_name: userData.profile_name || '',
-        dns: userData.dns || '1.1.1.1:53'
+        dns: userData.dns || '1.1.1.1:53',
+        node_id: userData.node_id || 'local',
+        rx_limit: userData.rx_limit || 0,
+        tx_limit: userData.tx_limit || 0,
       });
       setShowEditForm(true);
       fetchTransportParams(userData.transport || 'datachannel');
@@ -447,6 +450,7 @@ function App() {
       showNotification('Ошибка загрузки данных', 'error');
     }
   };
+
 
   const updateUser = async () => {
     if (!editingUser.client_id) {
@@ -1222,11 +1226,11 @@ function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_key">Encryption Key (оставь пустым чтобы не менять)</Label>
+                  <Label htmlFor="edit_key">Encryption Key</Label>
                   <div className="flex gap-2">
                     <Input
                       id="edit_key"
-                      placeholder="Не изменять"
+                      placeholder="64 символа hex"
                       value={editingUser.key}
                       onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
                       className="flex-1"
@@ -1246,11 +1250,11 @@ function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_room_id">Room ID (оставь пустым чтобы не менять)</Label>
+                  <Label htmlFor="edit_room_id">Room ID</Label>
                   <div className="flex gap-2">
                     <Input
                       id="edit_room_id"
-                      placeholder="Не изменять"
+                      placeholder="room-id"
                       value={editingUser.room_id}
                       onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
                       className="flex-1"

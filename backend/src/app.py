@@ -609,6 +609,8 @@ def get_user(uid):
     user = users[uid]
     return jsonify({
         'client_id': user.get('client_id', ''),
+        'room_id': user.get('room_id', ''),
+        'key': user.get('key', ''),
         'carrier': user.get('carrier', 'wbstream'),
         'transport': user.get('transport', 'datachannel'),
         'mode': user.get('mode', 'srv'),
@@ -616,7 +618,10 @@ def get_user(uid):
         'transport_params': user.get('transport_params', {}),
         'debug': user.get('debug', False),
         'profile_name': user.get('profile_name', ''),
-        'dns': user.get('dns', '1.1.1.1:53')
+        'dns': user.get('dns', '1.1.1.1:53'),
+        'node_id': user.get('node_id', 'local'),
+        'rx_limit': user.get('rx_limit', 0),
+        'tx_limit': user.get('tx_limit', 0),
     })
 
 @app.route('/api/users/update/<uid>', methods=['POST'])
@@ -653,6 +658,12 @@ def update_user(uid):
             user['profile_name'] = data['profile_name']
         if data.get('dns'):
             user['dns'] = data['dns']
+        if 'rx_limit' in data:
+            user['rx_limit'] = data['rx_limit']
+        if 'tx_limit' in data:
+            user['tx_limit'] = data['tx_limit']
+        if data.get('node_id'):
+            user['node_id'] = data['node_id']
 
         save_users()
 
