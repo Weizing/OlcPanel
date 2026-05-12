@@ -71,6 +71,7 @@ function App() {
   const [showRoomIdPicker, setShowRoomIdPicker] = useState(false);
   const [roomIdPickerTarget, setRoomIdPickerTarget] = useState(null); // 'new' or 'edit'
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('security');
   const [settingsForm, setSettingsForm] = useState({
     username: '',
     password: '',
@@ -308,9 +309,9 @@ function App() {
     }
   };
 
-  const saveSettings = async () => {
+  const saveSecuritySettings = async () => {
     if (!settingsForm.username || !settingsForm.password) {
-      showNotification('Заполните все поля!', 'error');
+      showNotification('Заполните логин и текущий пароль!', 'error');
       return;
     }
     try {
@@ -320,12 +321,43 @@ function App() {
         dns: settingsForm.dns || '1.1.1.1:53',
         debug: settingsForm.debug
       });
-      // Update default DNS for new instances
-      setNewUser(prev => ({ ...prev, dns: settingsForm.dns || '1.1.1.1:53' }));
-      showNotification('Настройки сохранены');
-      setShowSettingsDialog(false);
+      setSettingsForm(prev => ({ ...prev, password: '', newPassword: '' }));
+      showNotification('Логин и пароль сохранены');
     } catch (err) {
-      showNotification('Ошибка сохранения настроек', 'error');
+      showNotification('Ошибка сохранения', 'error');
+    }
+  };
+
+  const saveCoreSettings = async () => {
+    if (!settingsForm.dns) {
+      showNotification('Введите DNS сервер!', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns,
+        debug: settingsForm.debug
+      });
+      setNewUser(prev => ({ ...prev, dns: settingsForm.dns }));
+      showNotification('DNS сохранён');
+    } catch (err) {
+      showNotification('Ошибка сохранения', 'error');
+    }
+  };
+
+  const saveDevSettings = async () => {
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns || '1.1.1.1:53',
+        debug: settingsForm.debug
+      });
+      showNotification(`Debug режим ${settingsForm.debug ? 'включён' : 'выключён'}`);
+    } catch (err) {
+      showNotification('Ошибка сохранения', 'error');
     }
   };
 
@@ -1841,70 +1873,114 @@ function App() {
       </Dialog>
 
       {/* Settings Dialog */}
-      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+      <Dialog open={showSettingsDialog} onOpenChange={(v) => { setShowSettingsDialog(v); if (!v) setSettingsTab('security'); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Настройки панели</DialogTitle>
-            <DialogDescription>Логин, пароль и глобальные параметры</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <Label htmlFor="settings_username">Логин</Label>
-              <Input
-                id="settings_username"
-                placeholder="admin"
-                value={settingsForm.username}
-                onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="settings_password">Текущий пароль</Label>
-              <Input
-                id="settings_password"
-                type="password"
-                placeholder="Введите текущий пароль"
-                value={settingsForm.password}
-                onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
-              />
-            </div>
+          {/* Tab switcher */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg mt-2">
+            {[['security', 'Безопасность'], ['core', 'Ядро'], ['dev', 'Dev']].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSettingsTab(id)}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  settingsTab === id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="settings_new_password">Новый пароль (оставьте пустым чтобы не менять)</Label>
-              <Input
-                id="settings_new_password"
-                type="password"
-                placeholder="Новый пароль"
-                value={settingsForm.newPassword}
-                onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
-              />
-            </div>
+          <div className="space-y-4 mt-2">
+            {/* Security tab */}
+            {settingsTab === 'security' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_username">Логин</Label>
+                  <Input
+                    id="settings_username"
+                    placeholder="admin"
+                    value={settingsForm.username}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_password">Текущий пароль</Label>
+                  <Input
+                    id="settings_password"
+                    type="password"
+                    placeholder="Введите текущий пароль"
+                    value={settingsForm.password}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_new_password">Новый пароль <span className="text-muted-foreground text-xs">(оставьте пустым чтобы не менять)</span></Label>
+                  <Input
+                    id="settings_new_password"
+                    type="password"
+                    placeholder="Новый пароль"
+                    value={settingsForm.newPassword}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
+                  />
+                </div>
+                <Button onClick={saveSecuritySettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="settings_dns">DNS сервер по умолчанию</Label>
-              <Input
-                id="settings_dns"
-                placeholder="1.1.1.1:53"
-                value={settingsForm.dns}
-                onChange={(e) => setSettingsForm({ ...settingsForm, dns: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">Используется как дефолт для новых инстансов</p>
-            </div>
+            {/* Core tab */}
+            {settingsTab === 'core' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_dns">DNS сервер по умолчанию</Label>
+                  <Input
+                    id="settings_dns"
+                    placeholder="1.1.1.1:53"
+                    value={settingsForm.dns}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, dns: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    DNS используется ядром OlcRTC для разрешения адресов carriers.
+                    Дефолт подставляется в форму создания новых инстансов.
+                  </p>
+                </div>
+                <Button onClick={saveCoreSettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
 
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="settings_debug"
-                checked={settingsForm.debug}
-                onChange={(e) => setSettingsForm({ ...settingsForm, debug: e.target.checked })}
-                className="rounded"
-              />
-              <Label htmlFor="settings_debug" className="cursor-pointer">Debug режим (глобально)</Label>
-            </div>
-
-            <Button onClick={saveSettings} className="w-full">
-              Сохранить настройки
-            </Button>
+            {/* Dev tab */}
+            {settingsTab === 'dev' && (
+              <>
+                <div className="p-4 border border-yellow-600/30 rounded-lg bg-yellow-600/5 space-y-3">
+                  <p className="text-xs text-yellow-500 font-medium">⚠ Dev настройки для отладки</p>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="settings_debug"
+                      checked={settingsForm.debug}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, debug: e.target.checked })}
+                      className="rounded"
+                    />
+                    <Label htmlFor="settings_debug" className="cursor-pointer">Debug режим (глобально)</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Включает флаг <code className="bg-muted px-1 rounded">--debug</code> для всех запускаемых инстансов OlcRTC.
+                  </p>
+                </div>
+                <Button onClick={saveDevSettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
