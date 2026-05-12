@@ -71,10 +71,13 @@ function App() {
   const [showRoomIdPicker, setShowRoomIdPicker] = useState(false);
   const [roomIdPickerTarget, setRoomIdPickerTarget] = useState(null); // 'new' or 'edit'
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('security');
   const [settingsForm, setSettingsForm] = useState({
     username: '',
     password: '',
-    newPassword: ''
+    newPassword: '',
+    dns: '1.1.1.1:53',
+    debug: false
   });
   const [notifications, setNotifications] = useState([]);
   const [carriers, setCarriers] = useState([]);
@@ -107,6 +110,7 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      fetchConfig();
       fetchCarriers();
       fetchTransports();
       fetchStatus();
@@ -141,6 +145,25 @@ function App() {
       fetchTransportParams(newUser.transport);
     }
   }, [newUser.transport, isAuthenticated]);
+
+  const fetchConfig = async () => {
+    try {
+      const response = await axios.get('/api/config');
+      const config = response.data;
+      const defaultDns = config.dns || '1.1.1.1:53';
+      // Set default DNS from server config for new instances
+      setNewUser(prev => ({ ...prev, dns: defaultDns }));
+      // Pre-fill settings form with all config values
+      setSettingsForm(prev => ({
+        ...prev,
+        username: config.username || '',
+        dns: defaultDns,
+        debug: config.debug || false
+      }));
+    } catch (err) {
+      console.error('Failed to fetch config:', err);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -286,21 +309,55 @@ function App() {
     }
   };
 
-  const saveSettings = async () => {
+  const saveSecuritySettings = async () => {
     if (!settingsForm.username || !settingsForm.password) {
-      showNotification('Заполните все поля!', 'error');
+      showNotification('Заполните логин и текущий пароль!', 'error');
       return;
     }
     try {
       await axios.post('/api/config', {
         username: settingsForm.username,
-        password: settingsForm.newPassword || settingsForm.password
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns || '1.1.1.1:53',
+        debug: settingsForm.debug
       });
-      showNotification('Настройки сохранены');
-      setShowSettingsDialog(false);
-      setSettingsForm({ username: '', password: '', newPassword: '' });
+      setSettingsForm(prev => ({ ...prev, password: '', newPassword: '' }));
+      showNotification('Логин и пароль сохранены');
     } catch (err) {
-      showNotification('Ошибка сохранения настроек', 'error');
+      showNotification('Ошибка сохранения', 'error');
+    }
+  };
+
+  const saveCoreSettings = async () => {
+    if (!settingsForm.dns) {
+      showNotification('Введите DNS сервер!', 'error');
+      return;
+    }
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns,
+        debug: settingsForm.debug
+      });
+      setNewUser(prev => ({ ...prev, dns: settingsForm.dns }));
+      showNotification('DNS сохранён');
+    } catch (err) {
+      showNotification('Ошибка сохранения', 'error');
+    }
+  };
+
+  const saveDevSettings = async () => {
+    try {
+      await axios.post('/api/config', {
+        username: settingsForm.username,
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns || '1.1.1.1:53',
+        debug: settingsForm.debug
+      });
+      showNotification(`Debug режим ${settingsForm.debug ? 'включён' : 'выключён'}`);
+    } catch (err) {
+      showNotification('Ошибка сохранения', 'error');
     }
   };
 
@@ -386,6 +443,7 @@ function App() {
       return;
     }
     try {
+      const currentDns = newUser.dns;
       await axios.post('/api/users/add', newUser);
       setNewUser({
         client_id: '',
@@ -398,7 +456,7 @@ function App() {
         transport_params: {},
         debug: false,
         profile_name: '',
-        dns: '1.1.1.1:53'
+        dns: currentDns
       });
       setShowAddForm(false);
       fetchStatus();
@@ -407,6 +465,7 @@ function App() {
       showNotification('Ошибка добавления', 'error');
     }
   };
+
 
   const deleteUser = async (uid) => {
     if (!window.confirm('Точно удалить?')) return;
@@ -430,8 +489,8 @@ function App() {
       setEditingUser({
         id: user.id,
         client_id: userData.client_id || '',
-        key: '',
-        room_id: '',
+        key: userData.key || '',
+        room_id: userData.room_id || '',
         carrier: userData.carrier || 'wbstream',
         transport: userData.transport || 'datachannel',
         mode: userData.mode || 'srv',
@@ -439,7 +498,10 @@ function App() {
         transport_params: userData.transport_params || {},
         debug: userData.debug || false,
         profile_name: userData.profile_name || '',
-        dns: userData.dns || '1.1.1.1:53'
+        dns: userData.dns || '1.1.1.1:53',
+        node_id: userData.node_id || 'local',
+        rx_limit: userData.rx_limit || 0,
+        tx_limit: userData.tx_limit || 0,
       });
       setShowEditForm(true);
       fetchTransportParams(userData.transport || 'datachannel');
@@ -447,6 +509,7 @@ function App() {
       showNotification('Ошибка загрузки данных', 'error');
     }
   };
+
 
   const updateUser = async () => {
     if (!editingUser.client_id) {
@@ -1091,7 +1154,7 @@ function App() {
                     ) : (
                       <Input
                         type="text"
-                        value={newUser.transport_params[param.name] || param.default}
+                        value={newUser.transport_params[param.name]}
                         onChange={(e) => setNewUser({
                           ...newUser,
                           transport_params: { ...newUser.transport_params, [param.name]: e.target.value }
@@ -1222,11 +1285,11 @@ function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_key">Encryption Key (оставь пустым чтобы не менять)</Label>
+                  <Label htmlFor="edit_key">Encryption Key</Label>
                   <div className="flex gap-2">
                     <Input
                       id="edit_key"
-                      placeholder="Не изменять"
+                      placeholder="64 символа hex"
                       value={editingUser.key}
                       onChange={(e) => setEditingUser({ ...editingUser, key: e.target.value })}
                       className="flex-1"
@@ -1246,11 +1309,11 @@ function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_room_id">Room ID (оставь пустым чтобы не менять)</Label>
+                  <Label htmlFor="edit_room_id">Room ID</Label>
                   <div className="flex gap-2">
                     <Input
                       id="edit_room_id"
-                      placeholder="Не изменять"
+                      placeholder="room-id"
                       value={editingUser.room_id}
                       onChange={(e) => setEditingUser({ ...editingUser, room_id: e.target.value })}
                       className="flex-1"
@@ -1810,51 +1873,118 @@ function App() {
       </Dialog>
 
       {/* Settings Dialog */}
-      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+      <Dialog open={showSettingsDialog} onOpenChange={(v) => { setShowSettingsDialog(v); if (!v) setSettingsTab('security'); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Настройки панели</DialogTitle>
-            <DialogDescription>Изменить логин и пароль</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <Label htmlFor="settings_username">Новый логин</Label>
-              <Input
-                id="settings_username"
-                placeholder="admin"
-                value={settingsForm.username}
-                onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="settings_password">Текущий пароль</Label>
-              <Input
-                id="settings_password"
-                type="password"
-                placeholder="Введите текущий пароль"
-                value={settingsForm.password}
-                onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
-              />
-            </div>
+          {/* Tab switcher */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg mt-2">
+            {[['security', 'Безопасность'], ['core', 'Ядро'], ['dev', 'Dev']].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSettingsTab(id)}
+                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  settingsTab === id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="settings_new_password">Новый пароль (оставьте пустым чтобы не менять)</Label>
-              <Input
-                id="settings_new_password"
-                type="password"
-                placeholder="Новый пароль"
-                value={settingsForm.newPassword}
-                onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
-              />
-            </div>
+          <div className="space-y-4 mt-2">
+            {/* Security tab */}
+            {settingsTab === 'security' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_username">Логин</Label>
+                  <Input
+                    id="settings_username"
+                    placeholder="admin"
+                    value={settingsForm.username}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, username: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_password">Текущий пароль</Label>
+                  <Input
+                    id="settings_password"
+                    type="password"
+                    placeholder="Введите текущий пароль"
+                    value={settingsForm.password}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_new_password">Новый пароль <span className="text-muted-foreground text-xs">(оставьте пустым чтобы не менять)</span></Label>
+                  <Input
+                    id="settings_new_password"
+                    type="password"
+                    placeholder="Новый пароль"
+                    value={settingsForm.newPassword}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, newPassword: e.target.value })}
+                  />
+                </div>
+                <Button onClick={saveSecuritySettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
 
-            <Button onClick={saveSettings} className="w-full">
-              Сохранить настройки
-            </Button>
+            {/* Core tab */}
+            {settingsTab === 'core' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="settings_dns">DNS сервер по умолчанию</Label>
+                  <Input
+                    id="settings_dns"
+                    placeholder="1.1.1.1:53"
+                    value={settingsForm.dns}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, dns: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    DNS используется ядром OlcRTC для разрешения адресов carriers.
+                    Дефолт подставляется в форму создания новых инстансов.
+                  </p>
+                </div>
+                <Button onClick={saveCoreSettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
+
+            {/* Dev tab */}
+            {settingsTab === 'dev' && (
+              <>
+                <div className="p-4 border border-yellow-600/30 rounded-lg bg-yellow-600/5 space-y-3">
+                  <p className="text-xs text-yellow-500 font-medium">⚠ Dev настройки для отладки</p>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="settings_debug"
+                      checked={settingsForm.debug}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, debug: e.target.checked })}
+                      className="rounded"
+                    />
+                    <Label htmlFor="settings_debug" className="cursor-pointer">Debug режим (глобально)</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Включает флаг <code className="bg-muted px-1 rounded">--debug</code> для всех запускаемых инстансов OlcRTC.
+                  </p>
+                </div>
+                <Button onClick={saveDevSettings} className="w-full">
+                  Сохранить
+                </Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
+
 
       {/* Room ID Picker Dialog */}
       <Dialog open={showRoomIdPicker} onOpenChange={setShowRoomIdPicker}>
