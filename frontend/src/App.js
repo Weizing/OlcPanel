@@ -1133,7 +1133,7 @@ function App() {
                     <Label>{param.label}</Label>
                     {param.type === 'select' ? (
                       <Select
-                        value={newUser.transport_params[param.name]}
+                        value={newUser.transport_params[param.name] || param.default}
                         onChange={(e) => setNewUser({
                           ...newUser,
                           transport_params: { ...newUser.transport_params, [param.name]: e.target.value }
@@ -1154,7 +1154,7 @@ function App() {
                     ) : (
                       <Input
                         type="text"
-                        value={newUser.transport_params[param.name] || param.default}
+                        value={newUser.transport_params[param.name]}
                         onChange={(e) => setNewUser({
                           ...newUser,
                           transport_params: { ...newUser.transport_params, [param.name]: e.target.value }
