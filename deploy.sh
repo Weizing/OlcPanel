@@ -109,7 +109,7 @@ while true; do
 done
 
 # Ask for DNS
-read -p "DNS сервер [1.1.1.1:53]: " DNS_SERVER
+read -p "Дефолтный DNS сервер для ядра [1.1.1.1:53]: " DNS_SERVER
 DNS_SERVER=${DNS_SERVER:-1.1.1.1:53}
 
 # Ask for ports

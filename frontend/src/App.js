@@ -74,7 +74,9 @@ function App() {
   const [settingsForm, setSettingsForm] = useState({
     username: '',
     password: '',
-    newPassword: ''
+    newPassword: '',
+    dns: '1.1.1.1:53',
+    debug: false
   });
   const [notifications, setNotifications] = useState([]);
   const [carriers, setCarriers] = useState([]);
@@ -107,6 +109,7 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      fetchConfig();
       fetchCarriers();
       fetchTransports();
       fetchStatus();
@@ -141,6 +144,25 @@ function App() {
       fetchTransportParams(newUser.transport);
     }
   }, [newUser.transport, isAuthenticated]);
+
+  const fetchConfig = async () => {
+    try {
+      const response = await axios.get('/api/config');
+      const config = response.data;
+      const defaultDns = config.dns || '1.1.1.1:53';
+      // Set default DNS from server config for new instances
+      setNewUser(prev => ({ ...prev, dns: defaultDns }));
+      // Pre-fill settings form with all config values
+      setSettingsForm(prev => ({
+        ...prev,
+        username: config.username || '',
+        dns: defaultDns,
+        debug: config.debug || false
+      }));
+    } catch (err) {
+      console.error('Failed to fetch config:', err);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -294,11 +316,14 @@ function App() {
     try {
       await axios.post('/api/config', {
         username: settingsForm.username,
-        password: settingsForm.newPassword || settingsForm.password
+        password: settingsForm.newPassword || settingsForm.password,
+        dns: settingsForm.dns || '1.1.1.1:53',
+        debug: settingsForm.debug
       });
+      // Update default DNS for new instances
+      setNewUser(prev => ({ ...prev, dns: settingsForm.dns || '1.1.1.1:53' }));
       showNotification('Настройки сохранены');
       setShowSettingsDialog(false);
-      setSettingsForm({ username: '', password: '', newPassword: '' });
     } catch (err) {
       showNotification('Ошибка сохранения настроек', 'error');
     }
@@ -386,6 +411,7 @@ function App() {
       return;
     }
     try {
+      const currentDns = newUser.dns;
       await axios.post('/api/users/add', newUser);
       setNewUser({
         client_id: '',
@@ -398,7 +424,7 @@ function App() {
         transport_params: {},
         debug: false,
         profile_name: '',
-        dns: '1.1.1.1:53'
+        dns: currentDns
       });
       setShowAddForm(false);
       fetchStatus();
@@ -407,6 +433,7 @@ function App() {
       showNotification('Ошибка добавления', 'error');
     }
   };
+
 
   const deleteUser = async (uid) => {
     if (!window.confirm('Точно удалить?')) return;
@@ -1818,11 +1845,11 @@ function App() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Настройки панели</DialogTitle>
-            <DialogDescription>Изменить логин и пароль</DialogDescription>
+            <DialogDescription>Логин, пароль и глобальные параметры</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="settings_username">Новый логин</Label>
+              <Label htmlFor="settings_username">Логин</Label>
               <Input
                 id="settings_username"
                 placeholder="admin"
@@ -1853,12 +1880,35 @@ function App() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="settings_dns">DNS сервер по умолчанию</Label>
+              <Input
+                id="settings_dns"
+                placeholder="1.1.1.1:53"
+                value={settingsForm.dns}
+                onChange={(e) => setSettingsForm({ ...settingsForm, dns: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">Используется как дефолт для новых инстансов</p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="settings_debug"
+                checked={settingsForm.debug}
+                onChange={(e) => setSettingsForm({ ...settingsForm, debug: e.target.checked })}
+                className="rounded"
+              />
+              <Label htmlFor="settings_debug" className="cursor-pointer">Debug режим (глобально)</Label>
+            </div>
+
             <Button onClick={saveSettings} className="w-full">
               Сохранить настройки
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
 
       {/* Room ID Picker Dialog */}
       <Dialog open={showRoomIdPicker} onOpenChange={setShowRoomIdPicker}>
